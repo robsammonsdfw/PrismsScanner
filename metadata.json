@@ -1,0 +1,7 @@
+{
+  "name": "Prism Body Scanner",
+  "description": "A mobile-responsive web application integrating the Prism Labs Web Scan UI Kit for body scanning.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
