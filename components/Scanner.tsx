@@ -1,10 +1,11 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 // Importing the package often triggers the injection or availability of the global event
 import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { PRISM_CONFIG_PLACEHOLDERS } from '../constants';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, AlertTriangle, Lock } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -14,9 +15,43 @@ interface ScannerProps {
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<React.ReactNode | null>(null);
 
   useEffect(() => {
+    // 1. VALIDATION: Check for HTTPS (Required for Camera)
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (window.location.protocol !== 'https:' && !isLocalhost) {
+      setIsLoading(false);
+      setError(
+        <div className="text-center">
+          <p className="font-bold text-red-400 mb-2">Camera Access Blocked</p>
+          <p>The browser blocks camera access on insecure (HTTP) connections.</p>
+          <p className="mt-2 text-sm text-zinc-400">Please deploy to AWS Amplify (HTTPS) or use localhost.</p>
+        </div>
+      );
+      return;
+    }
+
+    // 2. VALIDATION: Check for Placeholder Keys
+    if (
+      PRISM_CONFIG_PLACEHOLDERS.API_KEY.includes('YOUR_') || 
+      PRISM_CONFIG_PLACEHOLDERS.SCAN_ID.includes('YOUR_')
+    ) {
+      setIsLoading(false);
+      setError(
+        <div className="text-center">
+          <p className="font-bold text-amber-400 mb-2">Configuration Missing</p>
+          <p className="text-sm mb-4">You have not set your Prism Labs API Key or Scan ID.</p>
+          <div className="text-left bg-black/50 p-3 rounded text-xs font-mono text-zinc-300 space-y-2">
+            <p>1. Open <span className="text-blue-400">constants.ts</span></p>
+            <p>2. Replace <span className="text-orange-400">YOUR_PRISM_API_KEY_HERE</span> with your actual key.</p>
+            <p>3. Replace <span className="text-orange-400">YOUR_SCAN_ID_HERE</span> with a valid ID.</p>
+          </div>
+        </div>
+      );
+      return;
+    }
+
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
       console.log('Prism SDK Loaded');
       setIsLoading(false);
@@ -29,32 +64,27 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       }
 
       // CONFIGURATION OBJECT
-      // !! CRITICAL !!: Check `node_modules/@prismlabs/web-scan-ui-kit/documentation/`
-      // for the exact configuration schema required by your version.
       const config: PrismConfig = {
         apiKey: PRISM_CONFIG_PLACEHOLDERS.API_KEY,
-        // Depending on the SDK version, you might need scanId or token
-        scanId: PRISM_CONFIG_PLACEHOLDERS.SCAN_ID, 
-        // token: PRISM_CONFIG_PLACEHOLDERS.TOKEN,
+        scanId: PRISM_CONFIG_PLACEHOLDERS.SCAN_ID,
+        token: PRISM_CONFIG_PLACEHOLDERS.TOKEN.includes('YOUR_') ? undefined : PRISM_CONFIG_PLACEHOLDERS.TOKEN,
         
-        // Helper to mount to our specific React ref
         container: containerRef.current,
 
-        // Translation Override Example (as requested)
+        // Translation Override Example
         translationOverrides: {
           leveling: {
-            title: "Please hold your phone vertically", // Customizing the text
+            title: "Please hold your phone vertically",
           },
         },
 
-        // Event Callbacks
         onSuccess: (data) => {
           console.log('Scan completed successfully', data);
           onComplete(data);
         },
         onFailure: (err) => {
           console.error('Scan failed', err);
-          setError('An error occurred during the scan initialization.');
+          setError('The scanner failed to initialize. Please check your API Key and permissions.');
         },
         onClose: () => {
           console.log('User closed scanner');
@@ -66,19 +96,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         prism.render(config);
       } catch (err) {
         console.error("Failed to render Prism UI:", err);
-        setError("Failed to initialize camera UI.");
+        setError("An unexpected error occurred while launching the scanner.");
       }
     };
 
     // Listen for the library's ready event
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
 
-    // Timeout fallback in case the event never fires (e.g., script load error)
+    // Timeout fallback
     const timeoutId = setTimeout(() => {
-      if (isLoading) {
-        // It's possible the event fired before we mounted. 
-        // In a real integration, check if `window.Prism` or similar global exists.
-        // For now, we just show a timeout warning.
+      if (isLoading && !error) {
         console.warn("Waiting for Prism SDK...");
       }
     }, 5000);
@@ -86,8 +113,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     return () => {
       window.removeEventListener('onPrismLoaded', handlePrismLoaded);
       clearTimeout(timeoutId);
-      // If the SDK provides a destroy method, call it here.
-      // e.g., if (window.prismInstance) window.prismInstance.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -101,25 +126,29 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         className="absolute inset-0 w-full h-full bg-black" 
       />
 
-      {/* Custom Loading Overlay (visible until SDK renders) */}
+      {/* Custom Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-[60]">
           <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-400 animate-pulse">Initializing 3D Scanner...</p>
+          <p className="text-zinc-600 text-xs mt-2">Loading SDK resources</p>
         </div>
       )}
 
       {/* Error State */}
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-[70] p-6 text-center">
-          <div className="bg-red-900/20 p-4 rounded-full mb-4">
-            <X className="w-10 h-10 text-red-500" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-[70] p-6">
+          <div className="bg-red-900/20 p-4 rounded-full mb-6">
+            {typeof error === 'string' ? <X className="w-10 h-10 text-red-500" /> : <AlertTriangle className="w-10 h-10 text-amber-500" />}
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">Initialization Error</h3>
-          <p className="text-zinc-400 mb-6">{error}</p>
+          
+          <div className="max-w-sm w-full text-zinc-200">
+            {error}
+          </div>
+
           <button 
             onClick={onClose}
-            className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg font-semibold transition-colors"
+            className="mt-8 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg font-semibold transition-colors w-full max-w-xs"
           >
             Return to Home
           </button>
