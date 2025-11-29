@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 // Importing the package often triggers the injection or availability of the global event
 import '@prismlabs/web-scan-ui-kit';
@@ -14,10 +13,9 @@ interface ScannerProps {
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const initializedRef = useRef<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<React.ReactNode | null>(null);
-  // Generate a fresh scan ID for this specific session
-  const [currentScanId] = useState<string>(generateScanId());
 
   useEffect(() => {
     // 1. VALIDATION: Check for HTTPS (Required for Camera)
@@ -51,6 +49,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     }
 
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
+      // Prevent double initialization (React Strict Mode or multiple events)
+      if (initializedRef.current) return;
+      initializedRef.current = true;
+
       console.log('Prism SDK Loaded');
       setIsLoading(false);
 
@@ -61,6 +63,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         return;
       }
 
+      // Generate a fresh ID for this specific render attempt to avoid collisions
+      const scanId = generateScanId();
+
       // Helper to handle empty or placeholder tokens
       const tokenValue = (!PRISM_CONFIG_PLACEHOLDERS.TOKEN || PRISM_CONFIG_PLACEHOLDERS.TOKEN.includes('YOUR_')) 
         ? undefined 
@@ -69,8 +74,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       // CONFIGURATION OBJECT
       const config: PrismConfig = {
         apiKey: PRISM_CONFIG_PLACEHOLDERS.API_KEY,
-        scanId: currentScanId,
+        scanId: scanId,
         token: tokenValue,
+        mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
         
         container: containerRef.current,
 
@@ -96,7 +102,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       };
 
       try {
-        console.log("Initializing Prism with ScanID:", currentScanId);
+        console.log("Initializing Prism with ScanID:", scanId);
         prism.render(config);
       } catch (err) {
         console.error("Failed to render Prism UI:", err);
@@ -109,7 +115,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     // Timeout fallback
     const timeoutId = setTimeout(() => {
-      if (isLoading && !error) {
+      if (isLoading && !error && !initializedRef.current) {
         console.warn("Waiting for Prism SDK...");
       }
     }, 5000);

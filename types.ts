@@ -12,6 +12,7 @@ export interface PrismConfig {
   token?: string;
   screen?: string; // e.g., 'landing', 'capture'
   container?: HTMLElement | string;
+  mode?: string; // Added to support 'sandbox' or 'production' modes
   
   // Translation overrides structure
   translationOverrides?: {
