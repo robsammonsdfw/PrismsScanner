@@ -1,3 +1,4 @@
+
 /**
  * PRISM LABS CONFIGURATION
  * 
@@ -15,7 +16,12 @@
  */
 
 // Helper to generate a random scan ID for testing purposes
-const generateTestScanId = () => `test_scan_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+export const generateScanId = () => {
+  if (import.meta.env.VITE_PRISM_SCAN_ID) {
+    return import.meta.env.VITE_PRISM_SCAN_ID;
+  }
+  return `test_scan_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+};
 
 export const PRISM_CONFIG_PLACEHOLDERS = {
   // Checks for env var, falls back to placeholder
@@ -23,7 +29,7 @@ export const PRISM_CONFIG_PLACEHOLDERS = {
   
   // We auto-generate a random ID so you can test immediately.
   // In a real production app, your backend should generate this ID and pass it to the frontend.
-  SCAN_ID: import.meta.env.VITE_PRISM_SCAN_ID || generateTestScanId(), 
+  SCAN_ID: generateScanId(), 
   
   // Token is typically optional if you are using an API Key. We leave it empty by default.
   TOKEN: import.meta.env.VITE_PRISM_TOKEN || "",

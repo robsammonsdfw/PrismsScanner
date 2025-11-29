@@ -1,9 +1,10 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 // Importing the package often triggers the injection or availability of the global event
 import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
-import { PRISM_CONFIG_PLACEHOLDERS } from '../constants';
+import { PRISM_CONFIG_PLACEHOLDERS, generateScanId } from '../constants';
 import { Loader2, X, AlertTriangle } from 'lucide-react';
 
 interface ScannerProps {
@@ -15,6 +16,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<React.ReactNode | null>(null);
+  // Generate a fresh scan ID for this specific session
+  const [currentScanId] = useState<string>(generateScanId());
 
   useEffect(() => {
     // 1. VALIDATION: Check for HTTPS (Required for Camera)
@@ -66,7 +69,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       // CONFIGURATION OBJECT
       const config: PrismConfig = {
         apiKey: PRISM_CONFIG_PLACEHOLDERS.API_KEY,
-        scanId: PRISM_CONFIG_PLACEHOLDERS.SCAN_ID,
+        scanId: currentScanId,
         token: tokenValue,
         
         container: containerRef.current,
@@ -93,7 +96,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       };
 
       try {
-        console.log("Initializing Prism with ScanID:", PRISM_CONFIG_PLACEHOLDERS.SCAN_ID);
+        console.log("Initializing Prism with ScanID:", currentScanId);
         prism.render(config);
       } catch (err) {
         console.error("Failed to render Prism UI:", err);
