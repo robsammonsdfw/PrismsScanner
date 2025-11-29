@@ -16,7 +16,7 @@
 
 export const PRISM_CONFIG_PLACEHOLDERS = {
   // Checks for env var, falls back to placeholder
-  API_KEY: import.meta.env.VITE_PRISM_API_KEY || "YOUR_PRISM_API_KEY_HERE",
+  API_KEY: import.meta.env.VITE_PRISM_API_KEY || "y!V@T6o&5#mFpz13W!a3I6nZ",
   
   // Depending on your flow, you might need a pre-generated Token or Scan ID
   SCAN_ID: import.meta.env.VITE_PRISM_SCAN_ID || "YOUR_SCAN_ID_HERE", 

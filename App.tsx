@@ -51,7 +51,7 @@ const App: React.FC = () => {
           </h1>
           
           <p className="text-zinc-400 mb-8 leading-relaxed">
-            Use your camera to take a quick 3D body scan. It only takes a minute to get your full health report with current health recommendations.
+            3D bodyscan to get your full health report with current health recommendations.
           </p>
 
           <div className="space-y-4 w-full">
