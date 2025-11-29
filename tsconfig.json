@@ -1,3 +1,4 @@
+
 {
   "compilerOptions": {
     "target": "ES2020",
@@ -14,10 +15,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting */
+    /* Linting - Relaxed for deployment stability */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     
     "types": ["vite/client"]

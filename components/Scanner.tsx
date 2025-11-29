@@ -5,7 +5,7 @@ import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { PRISM_CONFIG_PLACEHOLDERS } from '../constants';
-import { Loader2, X, AlertTriangle, Lock } from 'lucide-react';
+import { Loader2, X, AlertTriangle } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
