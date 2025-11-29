@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 // Importing the package often triggers the injection or availability of the global event
 import '@prismlabs/web-scan-ui-kit';
@@ -32,20 +31,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       return;
     }
 
-    // 2. VALIDATION: Check for Placeholder Keys
-    if (
-      PRISM_CONFIG_PLACEHOLDERS.API_KEY.includes('YOUR_') || 
-      PRISM_CONFIG_PLACEHOLDERS.SCAN_ID.includes('YOUR_')
-    ) {
+    // 2. VALIDATION: Check for Missing API Key
+    if (PRISM_CONFIG_PLACEHOLDERS.API_KEY.includes('YOUR_')) {
       setIsLoading(false);
       setError(
         <div className="text-center">
-          <p className="font-bold text-amber-400 mb-2">Configuration Missing</p>
-          <p className="text-sm mb-4">You have not set your Prism Labs API Key or Scan ID.</p>
+          <p className="font-bold text-amber-400 mb-2">API Key Missing</p>
+          <p className="text-sm mb-4">You have not set your Prism Labs API Key.</p>
           <div className="text-left bg-black/50 p-3 rounded text-xs font-mono text-zinc-300 space-y-2">
             <p>1. Open <span className="text-blue-400">constants.ts</span></p>
             <p>2. Replace <span className="text-orange-400">YOUR_PRISM_API_KEY_HERE</span> with your actual key.</p>
-            <p>3. Replace <span className="text-orange-400">YOUR_SCAN_ID_HERE</span> with a valid ID.</p>
           </div>
         </div>
       );
@@ -63,11 +58,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         return;
       }
 
+      // Helper to handle empty or placeholder tokens
+      const tokenValue = (!PRISM_CONFIG_PLACEHOLDERS.TOKEN || PRISM_CONFIG_PLACEHOLDERS.TOKEN.includes('YOUR_')) 
+        ? undefined 
+        : PRISM_CONFIG_PLACEHOLDERS.TOKEN;
+
       // CONFIGURATION OBJECT
       const config: PrismConfig = {
         apiKey: PRISM_CONFIG_PLACEHOLDERS.API_KEY,
         scanId: PRISM_CONFIG_PLACEHOLDERS.SCAN_ID,
-        token: PRISM_CONFIG_PLACEHOLDERS.TOKEN.includes('YOUR_') ? undefined : PRISM_CONFIG_PLACEHOLDERS.TOKEN,
+        token: tokenValue,
         
         container: containerRef.current,
 
@@ -84,7 +84,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         },
         onFailure: (err) => {
           console.error('Scan failed', err);
-          setError('The scanner failed to initialize. Please check your API Key and permissions.');
+          setError('The scanner failed to initialize. Please check console for details.');
         },
         onClose: () => {
           console.log('User closed scanner');
@@ -93,6 +93,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       };
 
       try {
+        console.log("Initializing Prism with ScanID:", PRISM_CONFIG_PLACEHOLDERS.SCAN_ID);
         prism.render(config);
       } catch (err) {
         console.error("Failed to render Prism UI:", err);
@@ -131,7 +132,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-[60]">
           <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-400 animate-pulse">Initializing 3D Scanner...</p>
-          <p className="text-zinc-600 text-xs mt-2">Loading SDK resources</p>
+          <p className="text-zinc-600 text-xs mt-2">Connecting to Prism Labs</p>
         </div>
       )}
 
