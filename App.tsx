@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Scanner } from './components/Scanner';
-import { Scan, Smartphone, ShieldCheck, ChevronRight } from 'lucide-react';
+import { Scan, Smartphone, ShieldCheck, ChevronRight, Activity } from 'lucide-react';
 
 enum AppState {
   LANDING,
@@ -33,9 +33,9 @@ const App: React.FC = () => {
         <header className="p-6 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Scan className="w-5 h-5 text-white" />
+              <Activity className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-lg tracking-tight">BodyScan AI</span>
+            <span className="font-bold text-lg tracking-tight">BodyHealth AI</span>
           </div>
         </header>
 
@@ -47,11 +47,11 @@ const App: React.FC = () => {
           </div>
 
           <h1 className="text-3xl font-bold mb-4 bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
-            Get Your Perfect Fit
+            Your Health Journey Starts Here
           </h1>
           
           <p className="text-zinc-400 mb-8 leading-relaxed">
-            Use your camera to take a quick 3D body scan. It only takes a minute and helps us recommend the perfect size.
+            Use your camera to take a quick 3D body scan. It only takes a minute to get your full health report with current health recommendations.
           </p>
 
           <div className="space-y-4 w-full">
@@ -111,7 +111,7 @@ const App: React.FC = () => {
       
       <h2 className="text-3xl font-bold mb-4">Scan Complete!</h2>
       <p className="text-zinc-400 mb-8 max-w-xs mx-auto">
-        We have successfully captured your measurements. Processing your 3D avatar now.
+        We have successfully captured your measurements. Generating your body composition report and BMI analysis now.
       </p>
 
       <div className="bg-zinc-900 p-4 rounded-lg w-full max-w-sm text-left mb-8 border border-zinc-800">
