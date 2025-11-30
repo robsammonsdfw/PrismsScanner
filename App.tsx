@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Scanner } from './components/Scanner';
 import { Navbar } from './components/Navbar';
 import { HealthReport } from './components/HealthReport';
-import { saveBodyScan, checkAuthToken } from './services/api';
+import { saveBodyScan, checkAuthToken, setAuthToken } from './services/api';
 import { 
   Smartphone, 
   ShieldCheck, 
@@ -23,6 +23,18 @@ const App: React.FC = () => {
   const [scanData, setScanData] = useState<any>(null);
 
   useEffect(() => {
+    // 1. SSO Check: Look for token in URL parameters first
+    const urlParams = new URLSearchParams(window.location.search);
+    const ssoToken = urlParams.get('token');
+
+    if (ssoToken) {
+        // Save the token from the URL to this app's local storage
+        setAuthToken(ssoToken);
+        // Remove the token from the URL to keep it clean and secure
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // 2. Verify Authentication
     if (!checkAuthToken()) {
         // Redirect to the main app login if no token is found
         window.location.href = 'https://main.embracehealth.ai';

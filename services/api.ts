@@ -41,3 +41,7 @@ export const getScanHistory = async () => {
 export const checkAuthToken = (): boolean => {
     return !!localStorage.getItem(AUTH_TOKEN_KEY);
 };
+
+export const setAuthToken = (token: string) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+};
