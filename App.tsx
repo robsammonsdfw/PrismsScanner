@@ -25,7 +25,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!checkAuthToken()) {
         // Redirect to the main app login if no token is found
-        window.location.href = 'https://main.embnracehealth.ai';
+        window.location.href = 'https://main.embracehealth.ai';
     } else {
         setAppState(AppState.LANDING);
     }
