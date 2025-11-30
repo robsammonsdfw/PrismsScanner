@@ -4,9 +4,9 @@ import { Menu, X, LayoutGrid, Utensils } from 'lucide-react';
 export const Navbar: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
 
-    // Since the destination app is an SPA without specific URL routes for these views
-    // based on the provided code, we link to the main entry point.
-    const externalLink = "https://food.embracehealth.ai";
+    // Explicitly separate the links to ensure correct navigation flow
+    const mainMenuLink = "https://main.embracehealth.ai";
+    const mealPlanningLink = "https://food.embracehealth.ai";
 
     return (
         <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
@@ -21,7 +21,7 @@ export const Navbar: React.FC = () => {
                     {/* Desktop Menu */}
                     <div className="hidden md:flex items-center space-x-2 lg:space-x-4">
                         <a 
-                            href={externalLink}
+                            href={mainMenuLink}
                             className="px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:text-emerald-600 hover:bg-slate-50 transition-colors flex items-center space-x-2"
                         >
                             <LayoutGrid className="w-5 h-5" />
@@ -29,7 +29,7 @@ export const Navbar: React.FC = () => {
                         </a>
                         
                         <a 
-                            href={externalLink}
+                            href={mealPlanningLink}
                             className="px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:text-emerald-600 hover:bg-slate-50 transition-colors flex items-center space-x-2"
                         >
                             <Utensils className="w-5 h-5" />
@@ -56,14 +56,14 @@ export const Navbar: React.FC = () => {
                 <div className="md:hidden bg-white border-t border-slate-200 absolute w-full left-0 z-50 shadow-lg">
                     <div className="pt-2 pb-3 space-y-1">
                         <a 
-                            href={externalLink}
+                            href={mainMenuLink}
                             className="w-full text-left px-4 py-3 text-base font-medium border-l-4 border-transparent text-slate-600 hover:bg-slate-50 hover:text-emerald-600 flex items-center space-x-3"
                         >
                             <LayoutGrid className="w-5 h-5" />
                             <span>Main Menu</span>
                         </a>
                         <a 
-                            href={externalLink}
+                            href={mealPlanningLink}
                             className="w-full text-left px-4 py-3 text-base font-medium border-l-4 border-transparent text-slate-600 hover:bg-slate-50 hover:text-emerald-600 flex items-center space-x-3"
                         >
                             <Utensils className="w-5 h-5" />
