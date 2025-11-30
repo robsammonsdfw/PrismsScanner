@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Scanner } from './components/Scanner';
 import { Navbar } from './components/Navbar';
+import { HealthReport } from './components/HealthReport';
 import { 
   Smartphone, 
   ShieldCheck, 
@@ -43,7 +44,17 @@ const App: React.FC = () => {
     );
   }
 
-  // 2. MAIN LAYOUT (Header + Content)
+  // 2. COMPLETED / REPORT VIEW
+  if (appState === AppState.COMPLETED) {
+    return (
+      <HealthReport 
+        onBack={handleCloseScanner} 
+        results={scanData}
+      />
+    );
+  }
+
+  // 3. MAIN LAYOUT (Header + Content)
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       <Navbar />
@@ -81,34 +92,6 @@ const App: React.FC = () => {
                 <span>Your data is encrypted & secure</span>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* COMPLETED VIEW */}
-        {appState === AppState.COMPLETED && (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
-              <ShieldCheck className="w-10 h-10 text-emerald-600" />
-            </div>
-            
-            <h2 className="text-3xl font-bold mb-4 text-slate-800">Scan Complete!</h2>
-            <p className="text-slate-600 mb-8 max-w-xs mx-auto">
-              We have successfully captured your measurements. Generating your body composition report and BMI analysis now.
-            </p>
-
-            <div className="bg-white p-4 rounded-lg w-full max-w-sm text-left mb-8 border border-slate-200 shadow-sm">
-              <h4 className="text-xs text-slate-500 uppercase tracking-wider mb-2">Debug Info</h4>
-              <pre className="text-xs text-slate-600 overflow-x-auto bg-slate-50 p-2 rounded">
-                {JSON.stringify(scanData || { status: 'success' }, null, 2)}
-              </pre>
-            </div>
-
-            <button 
-              onClick={handleCloseScanner}
-              className="w-full max-w-xs bg-slate-800 text-white font-semibold py-4 px-6 rounded-xl hover:bg-slate-700 transition-colors shadow-md"
-            >
-              Scan Again
-            </button>
           </div>
         )}
       </main>
