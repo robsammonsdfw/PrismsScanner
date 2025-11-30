@@ -1,5 +1,6 @@
 // This service communicates with the same backend lambda used by the main Food App.
-const API_BASE_URL = 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/default';
+// We prioritize the environment variable, but keep the hardcoded URL as a fallback for local development if .env is missing.
+const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/default';
 const AUTH_TOKEN_KEY = 'embracehealth-meals-auth-token';
 
 const getHeaders = () => {
