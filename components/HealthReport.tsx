@@ -1,70 +1,132 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
   Share, 
   Box, 
-  Info, 
   Download, 
   ArrowDown, 
   Activity, 
-  User 
+  User,
+  Loader2
 } from 'lucide-react';
+import { getScanHistory } from '../services/api';
 
 interface HealthReportProps {
   onBack: () => void;
-  results?: any; // In production, this would be the JSON from Prism API
+  results?: any; 
 }
 
 export const HealthReport: React.FC<HealthReportProps> = ({ onBack, results }) => {
   const [activeTab, setActiveTab] = useState<'report' | '3d'>('report');
+  const [history, setHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
-  // MOCK DATA matching the screenshots and requirements
-  const reportData = {
-    demographics: {
-      name: "Ellie Sample",
-      date: "Jul 14, 2025 at 3:49 PM",
-      age: 42,
-      gender: "Male",
-      height: "5'3\"",
-      weight: "210.1 lbs"
-    },
-    measurements: [
-      { label: "Neck", value: "18.5\"" },
-      { label: "Chest", value: "47.2\"" },
-      { label: "Waist", value: "44.9\"" },
-      { label: "Arms", value: "13.4\"" },
-      { label: "Thighs", value: "22.2\"" },
-      { label: "Calves", value: "15.7\"" }
-    ],
-    composition: {
-      bodyFat: 31.2,
-      fatMass: 65.5,
-      leanMass: 144.4,
-      waistToHeight: 0.70
-    },
-    metabolism: {
-      loss: 1995,
-      maintain: 2245,
-      gain: 2745,
-      bmr: 1796
-    },
-    // Added as per request
-    posture: {
-      head: { status: "Neutral", value: "0.2° tilt" },
-      shoulders: { status: "Imbalance", value: "1.2° Right drop", color: "text-amber-500" },
-      hips: { status: "Balanced", value: "Level" }
-    },
-    // Added as per request
-    progress: {
-      weightChange: -2.4,
-      fatChange: -1.1,
-      leanChange: 0.8
+  // Extract the actual scan data object. 
+  // If results came from DB save, structure is { id, scan_data, created_at }.
+  // If results came directly from Scanner (fallback), it might be the raw object.
+  const currentScan = results?.scan_data || results || {};
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+        try {
+            const data = await getScanHistory();
+            // Filter out the current scan if it's already in the history list (by ID or timestamp proximity)
+            const filteredHistory = data.filter((item: any) => item.id !== results?.id);
+            setHistory(filteredHistory);
+        } catch (e) {
+            console.error("Failed to load history", e);
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    };
+    fetchHistory();
+  }, [results]);
+
+  // --- MAPPING LOGIC ---
+  // We map the raw Prism data to our UI structure. 
+  // Note: Since we don't have the exact Prism SDK schema, we check for likely paths 
+  // and fallback to placeholders to prevent crashes.
+
+  const mapDataToReport = (data: any, previousData: any) => {
+    // Helper to get nested value safely
+    const getVal = (obj: any, path: string, fallback: any) => {
+        return path.split('.').reduce((acc, part) => acc && acc[part], obj) || fallback;
+    };
+
+    const demographics = {
+        name: "User", // Prism usually doesn't return name unless configured
+        date: new Date().toLocaleString(),
+        age: getVal(data, 'demographics.age', 30),
+        gender: getVal(data, 'demographics.gender', 'Not specified'),
+        height: getVal(data, 'measurements.height', "5'7\""), // Placeholder logic
+        weight: getVal(data, 'composition.weight', "N/A")
+    };
+
+    // Use raw measurements if available, else mocks
+    const measurements = [
+      { label: "Neck", value: getVal(data, 'measurements.neck', "--") },
+      { label: "Chest", value: getVal(data, 'measurements.chest', "--") },
+      { label: "Waist", value: getVal(data, 'measurements.waist', "--") },
+      { label: "Hips", value: getVal(data, 'measurements.hips', "--") },
+      { label: "Thighs", value: getVal(data, 'measurements.thighs', "--") },
+      { label: "Calves", value: getVal(data, 'measurements.calves', "--") }
+    ];
+
+    const composition = {
+      bodyFat: getVal(data, 'composition.bodyFatPercentage', 0).toFixed(1),
+      fatMass: getVal(data, 'composition.fatMass', 0).toFixed(1),
+      leanMass: getVal(data, 'composition.leanMass', 0).toFixed(1),
+      waistToHeight: 0.5 // Calculate if height/waist available
+    };
+
+    // Calculate progress if previous data exists
+    const prevComp = previousData?.scan_data?.composition || {};
+    // Ensure these are numbers for type consistency with mock data
+    const progress = {
+        weightChange: demographics.weight !== "N/A" && prevComp.weight ? parseFloat((parseFloat(demographics.weight) - parseFloat(prevComp.weight)).toFixed(1)) : 0,
+        fatChange: parseFloat((parseFloat(composition.bodyFat) - (parseFloat(prevComp.bodyFatPercentage) || parseFloat(composition.bodyFat))).toFixed(1)),
+        leanChange: parseFloat((parseFloat(composition.leanMass) - (parseFloat(prevComp.leanMass) || parseFloat(composition.leanMass))).toFixed(1))
+    };
+
+    // If real data is missing (e.g. initial demo), return the mock structure for visual integrity
+    if (!data || Object.keys(data).length === 0) {
+        return {
+            demographics: { name: "Ellie Sample", date: "Jul 14, 2025 at 3:49 PM", age: 42, gender: "Male", height: "5'3\"", weight: "210.1 lbs" },
+            measurements: [
+              { label: "Neck", value: "18.5\"" }, { label: "Chest", value: "47.2\"" }, { label: "Waist", value: "44.9\"" },
+              { label: "Arms", value: "13.4\"" }, { label: "Thighs", value: "22.2\"" }, { label: "Calves", value: "15.7\"" }
+            ],
+            // Use strings for bodyFat, fatMass, leanMass to match the real data types (toFixed returns string)
+            composition: { bodyFat: "31.2", fatMass: "65.5", leanMass: "144.4", waistToHeight: 0.58 }, 
+            metabolism: { loss: 1995, maintain: 2245, gain: 2745, bmr: 1796 },
+            posture: {
+              head: { status: "Neutral", value: "0.2° tilt" },
+              shoulders: { status: "Imbalance", value: "1.2° Right drop" },
+              hips: { status: "Balanced", value: "Level" }
+            },
+            progress: { weightChange: -2.4, fatChange: -1.1, leanChange: 0.8 }
+        };
     }
+
+    return {
+        demographics,
+        measurements,
+        composition,
+        metabolism: { loss: 2000, maintain: 2500, gain: 3000, bmr: 1800 }, // These usually require calculation formulas
+        posture: {
+              head: { status: "Neutral", value: "0.0°" },
+              shoulders: { status: "Balanced", value: "0.0°" },
+              hips: { status: "Balanced", value: "Level" }
+        },
+        progress
+    };
   };
+
+  const reportData = mapDataToReport(currentScan, history[0]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      {/* HEADER - Matches Screenshot colors */}
+      {/* HEADER */}
       <header className="bg-teal-500 text-slate-900 px-4 py-4 flex items-center justify-between shadow-md sticky top-0 z-30">
         <button 
           onClick={onBack}
@@ -158,7 +220,7 @@ export const HealthReport: React.FC<HealthReportProps> = ({ onBack, results }) =
                 <SummaryCard label="Body Fat %" value={`${reportData.composition.bodyFat}%`} />
                 <SummaryCard label="Fat Mass" value={`${reportData.composition.fatMass} lbs`} />
                 <SummaryCard label="Lean Mass" value={`${reportData.composition.leanMass} lbs`} />
-                <SummaryCard label="Waist-to-Height" value="--" />
+                <SummaryCard label="Waist-to-Height" value={reportData.composition.waistToHeight ? reportData.composition.waistToHeight.toString() : "--"} />
               </div>
             </section>
 
@@ -167,19 +229,19 @@ export const HealthReport: React.FC<HealthReportProps> = ({ onBack, results }) =
               {/* Body Fat Percentage */}
               <MetricDetail 
                 title="Body Fat Percentage"
-                description="The percentage of your body that is fat. One of the top predictors of long-term health, lifespan, metabolism, and athletic performance. Age range: 40-59 years."
-                value={reportData.composition.bodyFat}
+                description="The percentage of your body that is fat. One of the top predictors of long-term health, lifespan, metabolism, and athletic performance."
+                value={parseFloat(reportData.composition.bodyFat)}
                 unit="%"
                 min={10}
                 max={50}
-                type="inverse" // Higher is generally worse for fat
+                type="inverse" 
               />
 
               {/* Fat Mass */}
               <MetricDetail 
                 title="Fat Mass"
-                description="Decreasing fat mass is associated with improved health, lifespan, and athletic performance. Age range: 40-59 years."
-                value={reportData.composition.fatMass}
+                description="Decreasing fat mass is associated with improved health, lifespan, and athletic performance."
+                value={parseFloat(reportData.composition.fatMass)}
                 unit="lbs"
                 min={20}
                 max={100}
@@ -216,13 +278,12 @@ export const HealthReport: React.FC<HealthReportProps> = ({ onBack, results }) =
               </div>
             </section>
 
-            {/* POSTURE ANALYSIS (Requested feature) */}
+            {/* POSTURE ANALYSIS */}
             <section>
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="text-lg font-bold text-slate-800">
                   Posture Analysis
                 </h3>
-                <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">New</span>
               </div>
               <p className="text-sm text-slate-500 mb-6">
                 Identify imbalances and areas of strain based on your 3D scan.
@@ -232,57 +293,65 @@ export const HealthReport: React.FC<HealthReportProps> = ({ onBack, results }) =
                 <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                   <span className="font-medium text-slate-700">Head Tilt</span>
                   <div className="text-right">
-                    <span className="block font-bold text-emerald-600 text-sm">Neutral</span>
+                    <span className="block font-bold text-emerald-600 text-sm">{reportData.posture.head.status}</span>
                     <span className="text-xs text-slate-400">{reportData.posture.head.value}</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-center pb-3 border-b border-slate-200">
                   <span className="font-medium text-slate-700">Shoulder Level</span>
                   <div className="text-right">
-                    <span className="block font-bold text-amber-500 text-sm">Imbalance</span>
+                    <span className="block font-bold text-amber-500 text-sm">{reportData.posture.shoulders.status}</span>
                     <span className="text-xs text-slate-400">{reportData.posture.shoulders.value}</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="font-medium text-slate-700">Hip Alignment</span>
                   <div className="text-right">
-                    <span className="block font-bold text-emerald-600 text-sm">Balanced</span>
+                    <span className="block font-bold text-emerald-600 text-sm">{reportData.posture.hips.status}</span>
                     <span className="text-xs text-slate-400">{reportData.posture.hips.value}</span>
                   </div>
                 </div>
               </div>
             </section>
 
-            {/* PROGRESS VISUALIZATION (Requested feature) */}
+            {/* PROGRESS VISUALIZATION */}
             <section>
                <div className="flex items-center gap-2 mb-2">
                 <h3 className="text-lg font-bold text-slate-800">
                   Progress Visualization
                 </h3>
-                <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Trending</span>
               </div>
-              <p className="text-sm text-slate-500 mb-6">
-                Changes since your last scan on Jun 12, 2025.
-              </p>
-
-              <div className="grid grid-cols-3 gap-4">
-                <ProgressCard 
-                  label="Weight" 
-                  change={reportData.progress.weightChange} 
-                  unit="lbs" 
-                />
-                <ProgressCard 
-                  label="Body Fat" 
-                  change={reportData.progress.fatChange} 
-                  unit="%" 
-                />
-                <ProgressCard 
-                  label="Lean Mass" 
-                  change={reportData.progress.leanChange} 
-                  unit="lbs" 
-                  inverse // Positive is good for lean mass
-                />
-              </div>
+              {isLoadingHistory ? (
+                  <div className="flex items-center gap-2 text-slate-400 text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin"/> Loading previous history...
+                  </div>
+              ) : history.length > 0 ? (
+                  <>
+                      <p className="text-sm text-slate-500 mb-6">
+                        Changes since your last scan.
+                      </p>
+                      <div className="grid grid-cols-3 gap-4">
+                        <ProgressCard 
+                          label="Weight" 
+                          change={reportData.progress.weightChange} 
+                          unit="lbs" 
+                        />
+                        <ProgressCard 
+                          label="Body Fat" 
+                          change={reportData.progress.fatChange} 
+                          unit="%" 
+                        />
+                        <ProgressCard 
+                          label="Lean Mass" 
+                          change={reportData.progress.leanChange} 
+                          unit="lbs" 
+                          inverse 
+                        />
+                      </div>
+                  </>
+              ) : (
+                  <p className="text-sm text-slate-400 italic">No previous history available for comparison.</p>
+              )}
             </section>
 
             <button className="w-full mt-8 py-4 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
@@ -321,7 +390,6 @@ const MetricDetail: React.FC<{
   max: number;
   type?: 'standard' | 'inverse';
 }> = ({ title, description, value, unit, min, max, type = 'standard' }) => {
-  // Calculate percentage position for the marker
   const percentage = Math.min(Math.max(((value - min) / (max - min)) * 100, 0), 100);
 
   return (
@@ -329,9 +397,7 @@ const MetricDetail: React.FC<{
       <h4 className="font-bold text-slate-800 mb-1">{title}</h4>
       <p className="text-xs text-slate-500 leading-relaxed mb-4">{description}</p>
       
-      {/* Gradient Bar */}
       <div className="relative h-4 rounded-full w-full bg-gradient-to-r from-emerald-400 via-yellow-400 to-red-500 mb-2">
-        {/* Marker */}
         <div 
           className="absolute top-1/2 -translate-y-1/2 w-1 h-6 bg-slate-900 rounded-full border-2 border-white shadow-md transition-all duration-1000"
           style={{ left: `${percentage}%` }}
@@ -368,8 +434,8 @@ const ProgressCard: React.FC<{ label: string; change: number; unit: string; inve
   unit,
   inverse = false
 }) => {
-  // Logic: Generally weight loss is good (green), gain is bad (red), unless inverted (muscle mass)
-  const isPositiveChange = change > 0;
+  const safeChange = isNaN(change) ? 0 : change;
+  const isPositiveChange = safeChange > 0;
   const isGood = inverse ? isPositiveChange : !isPositiveChange;
   const colorClass = isGood ? 'text-emerald-600' : 'text-rose-500';
 
@@ -378,7 +444,7 @@ const ProgressCard: React.FC<{ label: string; change: number; unit: string; inve
       <span className="text-xs text-slate-500 mb-1">{label}</span>
       <div className={`text-lg font-bold flex items-center gap-1 ${colorClass}`}>
         {isPositiveChange ? <Activity className="w-4 h-4 rotate-180" /> : <ArrowDown className="w-4 h-4" />}
-        {Math.abs(change)} {unit}
+        {Math.abs(safeChange)} {unit}
       </div>
     </div>
   );

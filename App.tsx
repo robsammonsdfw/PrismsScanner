@@ -1,31 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Scanner } from './components/Scanner';
 import { Navbar } from './components/Navbar';
 import { HealthReport } from './components/HealthReport';
+import { saveBodyScan, checkAuthToken } from './services/api';
 import { 
   Smartphone, 
   ShieldCheck, 
-  ChevronRight, 
-  Activity
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
 
 enum AppState {
+  CHECKING_AUTH,
   LANDING,
   SCANNING,
+  SAVING,
   COMPLETED
 }
 
 const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>(AppState.LANDING);
+  const [appState, setAppState] = useState<AppState>(AppState.CHECKING_AUTH);
   const [scanData, setScanData] = useState<any>(null);
+
+  useEffect(() => {
+    if (!checkAuthToken()) {
+        // Redirect to the main app login if no token is found
+        window.location.href = 'https://main.embnracehealth.ai';
+    } else {
+        setAppState(AppState.LANDING);
+    }
+  }, []);
 
   const startScan = () => {
     setAppState(AppState.SCANNING);
   };
 
-  const handleScanComplete = (data: any) => {
-    setScanData(data);
-    setAppState(AppState.COMPLETED);
+  const handleScanComplete = async (data: any) => {
+    // 1. Show saving state
+    setAppState(AppState.SAVING);
+    
+    try {
+        // 2. Save to backend
+        const savedRecord = await saveBodyScan(data);
+        // 3. Update state with the record returned from DB (includes timestamp/ID)
+        setScanData(savedRecord);
+        setAppState(AppState.COMPLETED);
+    } catch (err) {
+        console.error("Failed to save scan to database", err);
+        // Fallback: Show report with local data even if save failed, but log error
+        setScanData({ scan_data: data }); 
+        setAppState(AppState.COMPLETED);
+    }
   };
 
   const handleCloseScanner = () => {
@@ -33,6 +58,10 @@ const App: React.FC = () => {
   };
 
   // --- VIEW ROUTING ---
+  
+  if (appState === AppState.CHECKING_AUTH) {
+      return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="w-8 h-8 animate-spin text-emerald-500"/></div>;
+  }
 
   // 1. SCANNER (Full Screen)
   if (appState === AppState.SCANNING) {
@@ -43,8 +72,18 @@ const App: React.FC = () => {
       />
     );
   }
+  
+  // 2. SAVING STATE
+  if (appState === AppState.SAVING) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white z-50">
+            <Loader2 className="w-12 h-12 animate-spin text-emerald-500 mb-4" />
+            <p className="text-lg font-medium">Saving your health report...</p>
+        </div>
+      );
+  }
 
-  // 2. COMPLETED / REPORT VIEW
+  // 3. COMPLETED / REPORT VIEW
   if (appState === AppState.COMPLETED) {
     return (
       <HealthReport 
@@ -54,7 +93,7 @@ const App: React.FC = () => {
     );
   }
 
-  // 3. MAIN LAYOUT (Header + Content)
+  // 4. MAIN LAYOUT (Header + Content)
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       <Navbar />
