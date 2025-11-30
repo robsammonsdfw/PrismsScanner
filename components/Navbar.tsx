@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
-import { Menu, X, LayoutGrid, Utensils } from 'lucide-react';
+import { Menu, X, LayoutGrid } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
 
     // Explicitly separate the links to ensure correct navigation flow
     const mainMenuLink = "https://main.embracehealth.ai";
-    const mealPlanningLink = "https://food.embracehealth.ai";
 
     return (
         <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between h-16">
-                    <div className="flex items-center cursor-pointer" onClick={() => window.location.reload()}>
+                    <div className="flex items-center cursor-pointer" onClick={() => window.location.href = mainMenuLink}>
                         <span className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-cyan-500">
                             EmbraceHealth
                         </span>
@@ -26,14 +25,6 @@ export const Navbar: React.FC = () => {
                         >
                             <LayoutGrid className="w-5 h-5" />
                             <span>Main Menu</span>
-                        </a>
-                        
-                        <a 
-                            href={mealPlanningLink}
-                            className="px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:text-emerald-600 hover:bg-slate-50 transition-colors flex items-center space-x-2"
-                        >
-                            <Utensils className="w-5 h-5" />
-                            <span>Meal Planning</span>
                         </a>
                     </div>
 
@@ -61,13 +52,6 @@ export const Navbar: React.FC = () => {
                         >
                             <LayoutGrid className="w-5 h-5" />
                             <span>Main Menu</span>
-                        </a>
-                        <a 
-                            href={mealPlanningLink}
-                            className="w-full text-left px-4 py-3 text-base font-medium border-l-4 border-transparent text-slate-600 hover:bg-slate-50 hover:text-emerald-600 flex items-center space-x-3"
-                        >
-                            <Utensils className="w-5 h-5" />
-                            <span>Meal Planning</span>
                         </a>
                     </div>
                 </div>
