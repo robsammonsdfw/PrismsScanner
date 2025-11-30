@@ -32,14 +32,14 @@ const App: React.FC = () => {
         setAuthToken(ssoToken);
         // Remove the token from the URL to keep it clean and secure
         window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-    // 2. Verify Authentication
-    if (!checkAuthToken()) {
-        // Redirect to the main app login if no token is found
-        window.location.href = 'https://main.embracehealth.ai';
-    } else {
         setAppState(AppState.LANDING);
+    } else if (checkAuthToken()) {
+        // 2. If already logged in locally
+        setAppState(AppState.LANDING);
+    } else {
+        // 3. Not logged in, redirect to Main App
+        // Ensure this URL matches your main app's address exactly
+        window.location.href = 'https://main.embracehealth.ai';
     }
   }, []);
 
