@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 // Importing the package often triggers the injection or availability of the global event
 import '@prismlabs/web-scan-ui-kit';
@@ -73,7 +74,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
       // Determine correct API URL
       const isProduction = PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT === 'production';
-      const apiBaseUrl = isProduction 
+      const apiUrl = isProduction 
         ? PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_PROD 
         : PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_SANDBOX;
 
@@ -85,7 +86,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
         
         // Critical Fixes: Correct API URL and Asset ID
-        apiBaseUrl: apiBaseUrl,
+        // Note: SDK usually expects 'apiUrl' for the endpoint override.
+        apiUrl: apiUrl,
         assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
         
         container: containerRef.current,
@@ -115,7 +117,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         console.log("Initializing Prism with Config:", {
            scanId,
            mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
-           apiBaseUrl,
+           apiUrl,
            assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID
         });
         prism.render(config);
