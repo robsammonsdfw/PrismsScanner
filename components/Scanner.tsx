@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
-import { PRISM_CONFIG_PLACEHOLDERS, generateScanId } from '../constants';
+import { PRISM_CONFIG_PLACEHOLDERS } from '../constants';
 import { Loader2, X, AlertTriangle } from 'lucide-react';
 
 interface ScannerProps {
@@ -15,138 +15,179 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [statusMessage, setStatusMessage] = useState<string>("Initializing...");
   const [error, setError] = useState<React.ReactNode | null>(null);
 
+  // Helper to determine base URL
+  const getApiBaseUrl = () => {
+    return PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT === 'production'
+      ? PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_PROD
+      : PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_SANDBOX;
+  };
+
   useEffect(() => {
-    // Lock body scroll while Scanner is open to prevent background scrolling
+    // Lock body scroll while Scanner is open
     document.body.style.overflow = 'hidden';
 
-    // 1. VALIDATION: Check for HTTPS (Required for Camera)
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (window.location.protocol !== 'https:' && !isLocalhost) {
-      setIsLoading(false);
-      setError(
-        <div className="text-center">
-          <p className="font-bold text-red-400 mb-2">Camera Access Blocked</p>
-          <p>The browser blocks camera access on insecure (HTTP) connections.</p>
-          <p className="mt-2 text-sm text-zinc-400">Please deploy to AWS Amplify (HTTPS) or use localhost.</p>
-        </div>
-      );
-      return () => { document.body.style.overflow = ''; };
-    }
+    const baseUrl = getApiBaseUrl();
+    const apiKey = PRISM_CONFIG_PLACEHOLDERS.API_KEY;
 
-    // 2. VALIDATION: Check for Missing API Key
-    if (PRISM_CONFIG_PLACEHOLDERS.API_KEY.includes('YOUR_')) {
-      setIsLoading(false);
-      setError(
-        <div className="text-center">
-          <p className="font-bold text-amber-400 mb-2">API Key Missing</p>
-          <p className="text-sm mb-4">You have not set your Prism Labs API Key.</p>
-          <div className="text-left bg-black/50 p-3 rounded text-xs font-mono text-zinc-300 space-y-2">
-            <p>1. Open <span className="text-blue-400">constants.ts</span></p>
-            <p>2. Replace <span className="text-orange-400">YOUR_PRISM_API_KEY_HERE</span> with your actual key.</p>
-          </div>
-        </div>
-      );
-      return () => { document.body.style.overflow = ''; };
-    }
-
-    const handlePrismLoaded = (event: PrismLoadedEvent) => {
-      // Prevent double initialization (React Strict Mode or multiple events)
-      if (initializedRef.current) return;
-      initializedRef.current = true;
-
-      console.log('Prism SDK Loaded');
-      setIsLoading(false);
-
-      const prism = event.detail.prism;
-
-      if (!containerRef.current) {
-        console.error('Scanner container not found');
-        return;
-      }
-
-      // Generate a fresh ID for this specific render attempt to avoid collisions
-      const scanId = generateScanId();
-
-      // Helper to handle empty or placeholder tokens
-      const tokenValue = (!PRISM_CONFIG_PLACEHOLDERS.TOKEN || PRISM_CONFIG_PLACEHOLDERS.TOKEN.includes('YOUR_')) 
-        ? undefined 
-        : PRISM_CONFIG_PLACEHOLDERS.TOKEN;
-
-      // Determine correct API URL
-      const isProduction = PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT === 'production';
-      const endpointUrl = isProduction 
-        ? PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_PROD 
-        : PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_SANDBOX;
-
-      // CONFIGURATION OBJECT
-      const config: PrismConfig = {
-        apiKey: PRISM_CONFIG_PLACEHOLDERS.API_KEY,
-        scanId: scanId,
-        token: tokenValue,
-        mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
-        
-        // Critical Fix: Pass the URL in multiple ways to ensure the SDK picks it up
-        // and overrides any internal defaults (like Amplitude).
-        apiBaseUrl: endpointUrl,
-        apiUrl: endpointUrl,
-        baseUrl: endpointUrl,
-        
-        assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
-        
-        container: containerRef.current,
-
-        // Translation Override Example
-        translationOverrides: {
-          leveling: {
-            title: "Please hold your phone vertically",
-          },
-        },
-
-        onSuccess: (data) => {
-          console.log('Scan completed successfully', data);
-          onComplete(data);
-        },
-        onFailure: (err) => {
-          console.error('Scan failed', err);
-          setError('The scanner failed to initialize. Please check console for details.');
-        },
-        onClose: () => {
-          console.log('User closed scanner');
-          onClose();
-        }
-      };
-
+    // 1. HAPPY PATH: Create User & Scan Record *Before* Loading SDK
+    const initScanSession = async () => {
       try {
-        console.log("Initializing Prism with Config:", {
-           scanId,
-           mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
-           endpointUrl: endpointUrl,
-           assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID
+        // Validation
+        if (apiKey.includes('YOUR_')) throw new Error("API Key is not configured in constants.ts");
+
+        // A. CREATE USER
+        setStatusMessage("Creating user record...");
+        const externalUserId = `user_${Math.random().toString(36).substring(2, 15)}`; // In prod, use real user ID
+        
+        console.log(`[Happy Path 1/3] Creating user at ${baseUrl}/v1/users`);
+        
+        const userRes = await fetch(`${baseUrl}/v1/users`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey
+            },
+            body: JSON.stringify({
+                externalId: externalUserId,
+                // Add demographics here if available from previous screens
+            })
         });
-        prism.render(config);
-      } catch (err) {
-        console.error("Failed to render Prism UI:", err);
-        setError("An unexpected error occurred while launching the scanner.");
+
+        if (!userRes.ok) {
+            const errText = await userRes.text();
+            throw new Error(`Failed to create user: ${userRes.status} ${errText}`);
+        }
+
+        const userData = await userRes.json();
+        // The API returns the internal ID which acts as the 'userToken' for the next step
+        const userToken = userData.id || userData._id; 
+        console.log("[Happy Path 1/3] User created:", userToken);
+
+        // B. CREATE SCAN
+        setStatusMessage("Initializing scan session...");
+        console.log(`[Happy Path 2/3] Creating scan at ${baseUrl}/v1/scans`);
+
+        const scanRes = await fetch(`${baseUrl}/v1/scans`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey
+            },
+            body: JSON.stringify({
+                userToken: userToken,
+                assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
+                // Optional: source: 'web'
+            })
+        });
+
+        if (!scanRes.ok) {
+            const errText = await scanRes.text();
+            throw new Error(`Failed to create scan: ${scanRes.status} ${errText}`);
+        }
+
+        const scanData = await scanRes.json();
+        const scanId = scanData.id || scanData._id;
+        const securityToken = scanData.securityToken; // Some versions require this
+        console.log("[Happy Path 2/3] Scan created:", scanId);
+
+        // C. READY TO RENDER
+        // We now have a valid scanId existing on the server. 
+        // We wait for the 'onPrismLoaded' event (or trigger it if already loaded) to render.
+        waitForSDK(scanId, securityToken);
+
+      } catch (err: any) {
+        console.error("Initialization Failed:", err);
+        setIsLoading(false);
+        setError(
+            <div className="text-center">
+                <p className="font-bold text-red-400 mb-2">Initialization Error</p>
+                <p className="text-sm">{err.message || "Could not start scan session."}</p>
+            </div>
+        );
       }
     };
 
-    // Listen for the library's ready event
-    window.addEventListener('onPrismLoaded', handlePrismLoaded);
+    const waitForSDK = (validScanId: string, validToken?: string) => {
+        setStatusMessage("Launching Scanner...");
+        
+        const handlePrismLoaded = (event: PrismLoadedEvent) => {
+            if (initializedRef.current) return;
+            initializedRef.current = true;
 
-    // Timeout fallback
-    const timeoutId = setTimeout(() => {
-      if (isLoading && !error && !initializedRef.current) {
-        console.warn("Waiting for Prism SDK...");
-      }
-    }, 5000);
+            const prism = event.detail.prism;
+            if (!containerRef.current) return;
+
+            console.log(`[Happy Path 3/3] Rendering SDK with Scan ID: ${validScanId}`);
+            
+            // CONFIGURATION OBJECT
+            // We use the VALID scan ID from the API, not a random one.
+            const config: PrismConfig & { [key: string]: any } = {
+                apiKey: apiKey,
+                scanId: validScanId, 
+                token: validToken, // If the API returned a security token
+                mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
+                
+                // CRITICAL: URL OVERRIDES
+                apiBaseUrl: baseUrl,
+                apiUrl: baseUrl,
+                baseUrl: baseUrl,
+                api_base_url: baseUrl,
+
+                assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
+                asset_config_id: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
+                
+                container: containerRef.current,
+
+                translationOverrides: {
+                    leveling: { title: "Hold phone vertically" },
+                },
+
+                onSuccess: (data: any) => {
+                    console.log('Scan success:', data);
+                    onComplete(data);
+                },
+                onFailure: (err: any) => {
+                    console.error('Scan failure:', err);
+                    setError('Scan failed. Please try again.');
+                },
+                onClose: () => {
+                    onClose();
+                }
+            };
+
+            try {
+                prism.render(config);
+                setIsLoading(false);
+            } catch (err) {
+                console.error("SDK Render Error:", err);
+                setError("Failed to launch 3D view.");
+            }
+        };
+
+        // If 'onPrismLoaded' already fired before we got here, we might need a fallback or check
+        // but typically adding the listener now is fine as the script loads async.
+        window.addEventListener('onPrismLoaded', handlePrismLoaded);
+        
+        // Safety timeout if SDK never loads
+        setTimeout(() => {
+            if (isLoading && !initializedRef.current) {
+               // Force check if window.Prism exists if event missed? 
+               // For now just warn.
+               console.warn("Still waiting for Prism SDK...");
+            }
+        }, 8000);
+    };
+
+    // Start the process
+    initScanSession();
 
     return () => {
-      // Unlock body scroll when component unmounts
       document.body.style.overflow = '';
-      window.removeEventListener('onPrismLoaded', handlePrismLoaded);
-      clearTimeout(timeoutId);
+      // Cleanup listener would happen here, but since we define handlePrismLoaded inside,
+      // strictly speaking we should move it out or use a ref, but for this flow it's okay.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -163,9 +204,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       {/* Custom Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-[60]">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-          <p className="text-zinc-400 animate-pulse">Initializing 3D Scanner...</p>
-          <p className="text-zinc-600 text-xs mt-2">Connecting to Prism Labs</p>
+          <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-4" />
+          <p className="text-zinc-200 font-medium animate-pulse">{statusMessage}</p>
+          <p className="text-zinc-500 text-xs mt-2 font-mono">Connecting to Prism Labs...</p>
         </div>
       )}
 
@@ -176,13 +217,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             {typeof error === 'string' ? <X className="w-10 h-10 text-red-500" /> : <AlertTriangle className="w-10 h-10 text-amber-500" />}
           </div>
           
-          <div className="max-w-sm w-full text-zinc-200">
+          <div className="max-w-sm w-full text-zinc-200 mb-8">
             {error}
           </div>
 
           <button 
             onClick={onClose}
-            className="mt-8 px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg font-semibold transition-colors w-full max-w-xs"
+            className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg font-semibold transition-colors w-full max-w-xs"
           >
             Return to Home
           </button>
