@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import jwt from 'jsonwebtoken';
 import https from 'https';
@@ -189,12 +190,14 @@ export const handler = async (event) => {
 // --- HANDLER FOR BODY SCANS ---
 async function handleBodyScansRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
+    console.log(`[BodyScans] Processing request: ${method} ${pathParts.join('/')}`);
 
     // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
             const { PRISM_API_KEY, PRISM_ENV } = process.env;
             if (!PRISM_API_KEY) {
+                console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
                 return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
             }
 
@@ -227,7 +230,9 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     const retryData = await retryRes.json();
                     prismUserToken = retryData.id || retryData._id || retryData.userToken;
                  } else {
-                     throw new Error(`Prism User Error: ${await userRes.text()}`);
+                     const errorText = await userRes.text();
+                     console.error(`[BodyScans] Prism Create User Error: ${errorText}`);
+                     throw new Error(`Prism User Error: ${errorText}`);
                  }
             } else {
                 const userData = await userRes.json();
@@ -241,7 +246,11 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 body: JSON.stringify({ userToken: prismUserToken, assetConfigId: assetConfigId })
             });
 
-            if (!scanRes.ok) throw new Error(`Prism Scan Error: ${await scanRes.text()}`);
+            if (!scanRes.ok) {
+                const errorText = await scanRes.text();
+                console.error(`[BodyScans] Prism Create Scan Error: ${errorText}`);
+                throw new Error(`Prism Scan Error: ${errorText}`);
+            }
             const scanData = await scanRes.json();
 
             // Return credentials to frontend
@@ -258,7 +267,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
 
         } catch (e) {
             console.error("Prism Initialization Error:", e);
-            return { statusCode: 502, headers, body: JSON.stringify({ error: 'Failed to initialize scan session with provider.' }) };
+            return { statusCode: 502, headers, body: JSON.stringify({ error: 'Failed to initialize scan session with provider.', details: e.message }) };
         }
     }
 

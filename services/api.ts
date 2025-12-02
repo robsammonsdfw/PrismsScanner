@@ -1,3 +1,4 @@
+
 // This service communicates with the same backend lambda used by the main Food App.
 // We prioritize the environment variable, but keep the hardcoded URL as a fallback for local development if .env is missing.
 const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/default';
@@ -18,7 +19,19 @@ export const initScanSession = async () => {
     });
 
     if (!response.ok) {
-        throw new Error('Failed to initialize scan session via backend.');
+        let errorMessage = 'Failed to initialize scan session via backend.';
+        try {
+            const errorBody = await response.json();
+            if (errorBody.error) {
+                errorMessage = errorBody.error;
+            }
+            if (errorBody.details) {
+                errorMessage += `: ${errorBody.details}`;
+            }
+        } catch (e) {
+            console.warn('Could not parse backend error response', e);
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();
