@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import jwt from 'jsonwebtoken';
 import https from 'https';
@@ -195,15 +194,21 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
-            const { PRISM_API_KEY } = process.env;
+            const { PRISM_API_KEY, PRISM_ENV } = process.env;
             if (!PRISM_API_KEY) {
                 console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
                 return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
             }
 
-            // Corrected Base URL: Use the Hosted API production URL for both sandbox and prod.
-            // The environment is determined by the API Key provided.
-            const baseUrl = "https://api.hosted.prismlabs.tech";
+            // Determine Environment and Base URL
+            // Default to sandbox unless explicitly set to 'production'
+            const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
+            const baseUrl = env === 'production' 
+                ? "https://api.hosted.prismlabs.tech" 
+                : "https://sandbox-api.hosted.prismlabs.tech";
+
+            console.log(`[BodyScans] Using Environment: ${env} -> ${baseUrl}`);
+
             const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
             
             // Generate a unique token for the user.
@@ -277,7 +282,8 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     scanId: scanData.id || scanData._id,
                     securityToken: scanData.securityToken,
                     apiBaseUrl: baseUrl,
-                    assetConfigId: assetConfigId
+                    assetConfigId: assetConfigId,
+                    mode: env // Return the mode so frontend uses correct visual indicators
                 })
             };
 
@@ -299,9 +305,12 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
         
         if (body.scanId) {
             try {
-                const { PRISM_API_KEY } = process.env;
-                // Always use hosted API Url
-                const baseUrl = "https://api.hosted.prismlabs.tech";
+                const { PRISM_API_KEY, PRISM_ENV } = process.env;
+                
+                const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
+                const baseUrl = env === 'production' 
+                    ? "https://api.hosted.prismlabs.tech" 
+                    : "https://sandbox-api.hosted.prismlabs.tech";
 
                 const fetchPrism = async (endpoint) => {
                     const res = await fetch(`${baseUrl}${endpoint}`, {

@@ -32,12 +32,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         // Your backend uses the hidden API Key to create the User & Scan
         const sessionData = await initScanSession();
         
-        const { scanId, securityToken, apiBaseUrl, assetConfigId } = sessionData;
-        console.log("[Happy Path] Session Initialized via Backend:", scanId);
+        const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
+        console.log("[Happy Path] Session Initialized via Backend:", scanId, "Mode:", mode);
 
         // 2. READY TO RENDER
         // We now have valid credentials from the backend.
-        waitForSDK(scanId, securityToken, apiBaseUrl, assetConfigId);
+        waitForSDK(scanId, securityToken, apiBaseUrl, assetConfigId, mode);
 
       } catch (err: any) {
         console.error("Initialization Failed:", err);
@@ -51,7 +51,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       }
     };
 
-    const waitForSDK = (validScanId: string, validToken: string | undefined, apiBaseUrl: string, assetConfigId: string) => {
+    const waitForSDK = (validScanId: string, validToken: string | undefined, apiBaseUrl: string, assetConfigId: string, mode: string) => {
         setStatusMessage("Launching Scanner...");
         
         const handlePrismLoaded = (event: PrismLoadedEvent) => {
@@ -69,7 +69,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
                 apiKey: "ignored_by_sdk_if_scan_id_valid", 
                 scanId: validScanId, 
                 token: validToken, 
-                mode: 'sandbox', // or 'production' based on what backend returned if you want to pass it
+                mode: mode || 'sandbox', 
                 
                 // URL OVERRIDES (Backend tells us which URL it used)
                 apiBaseUrl: apiBaseUrl,
