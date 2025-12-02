@@ -76,7 +76,7 @@ export const handler = async (event) => {
         'GEMINI_API_KEY', 'SHOPIFY_STOREFRONT_TOKEN', 'SHOPIFY_STORE_DOMAIN',
         'JWT_SECRET', 'FRONTEND_URL', 'PGHOST', 'PGUSER', 'PGPASSWORD',
         'PGDATABASE', 'PGPORT'
-        // We allow PRISM vars to be missing temporarily to avoid crashing existing functionality if not set yet
+        // PRISM_API_KEY is validated inside the specific handler to allow partial app function if missing
     ];
     
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -190,7 +190,7 @@ export const handler = async (event) => {
 async function handleBodyScansRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
 
-    // POST /body-scans/init -> Initialize a new session with Prism
+    // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
             const { PRISM_API_KEY, PRISM_ENV } = process.env;
@@ -204,40 +204,34 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             
             // 1. Create User
             const userExternalId = `user_${userId}`; 
-            // Note: In a real app, you might want to store the Prism User Token in your DB users table
-            // to avoid creating new Prism users every time.
+            // Note: We use the userId to keep it consistent.
             const userRes = await fetch(`${baseUrl}/v1/users`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
                 body: JSON.stringify({ externalId: userExternalId })
             });
             
-            // If 409 Conflict, it means user exists, so we try to find/get them or just proceed if we had stored the token.
-            // For this flow, we'll assume success or handle existing.
-            // Prism API usually returns the user object if created or found.
             let prismUserToken;
             if (!userRes.ok) {
-                 // Fallback: If 409 or similar, normally we'd search, but for now let's just create a unique one per session
-                 // if strict persistence isn't set up. Or error out.
-                 // Better approach for Happy Path: Just ensure we get a token.
-                 // Let's rely on standard response.
                  if (userRes.status === 409) {
-                     // Handle user exists logic if API supports lookup, or ignore if we can't recover.
-                     // Simple fix: Append timestamp to externalId to ensure uniqueness for *this* session scan
-                     // if we don't need history linking on Prism side.
+                     // If user exists, try to create a unique session user or handle retrieval.
+                     // For stability in this demo, we ensure a fresh ID if the conflict occurs on a strict environment,
+                     // or we could implement a GET /users lookup. 
+                     // Here we try to create a distinct session ID fallback.
+                     const uniqueId = `${userExternalId}_${Date.now()}`;
                      const retryRes = await fetch(`${baseUrl}/v1/users`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
-                        body: JSON.stringify({ externalId: `${userExternalId}_${Date.now()}` })
+                        body: JSON.stringify({ externalId: uniqueId })
                     });
                     const retryData = await retryRes.json();
-                    prismUserToken = retryData.id || retryData._id;
+                    prismUserToken = retryData.id || retryData._id || retryData.userToken;
                  } else {
                      throw new Error(`Prism User Error: ${await userRes.text()}`);
                  }
             } else {
                 const userData = await userRes.json();
-                prismUserToken = userData.id || userData._id;
+                prismUserToken = userData.id || userData._id || userData.userToken;
             }
 
             // 2. Create Scan
@@ -299,9 +293,6 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 const scanDetails = await fetchPrism(`/v1/scans/${body.scanId}`);
                 
                 // 2. Get Measurements (Step 6a)
-                // Note: These might be 404 if processing isn't finished. 
-                // In a real production app, we might need to poll or return "processing" to the UI.
-                // We'll try to fetch now.
                 const measurements = await fetchPrism(`/v1/scans/${body.scanId}/measurements`);
                 
                 // 3. Get Mass/Body Fat (Step 6b)
