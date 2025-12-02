@@ -87,8 +87,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         token: tokenValue,
         mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
         
-        // Critical Fix: Use 'apiBaseUrl' as the key based on SDK requirements.
+        // Critical Fix: Pass the URL in multiple ways to ensure the SDK picks it up
+        // and overrides any internal defaults (like Amplitude).
         apiBaseUrl: endpointUrl,
+        apiUrl: endpointUrl,
+        baseUrl: endpointUrl,
         
         assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
         
@@ -119,7 +122,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         console.log("Initializing Prism with Config:", {
            scanId,
            mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
-           apiBaseUrl: endpointUrl,
+           endpointUrl: endpointUrl,
            assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID
         });
         prism.render(config);

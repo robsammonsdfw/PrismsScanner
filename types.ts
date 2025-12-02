@@ -1,4 +1,5 @@
 
+
 // Window interface augmentation to handle the custom Prism event
 export interface PrismInstance {
   render: (config: PrismConfig) => void;
@@ -14,7 +15,12 @@ export interface PrismConfig {
   screen?: string; // e.g., 'landing', 'capture'
   container?: HTMLElement | string;
   mode?: string; // Added to support 'sandbox' or 'production' modes
-  apiBaseUrl?: string; // Custom API URL to override defaults (Standard SDK key)
+  
+  // URL Overrides - Providing multiple variants to ensure SDK picks one up
+  apiBaseUrl?: string; 
+  apiUrl?: string;
+  baseUrl?: string;
+
   assetConfigId?: string; // Specific asset configuration ID
   
   // Translation overrides structure
