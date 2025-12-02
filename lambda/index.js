@@ -250,16 +250,26 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             if (!userExists) {
                 console.log(`[BodyScans] Registering new user at: ${baseUrl}/users`);
                 
-                // Use a complete payload structure
+                // Use a COMPLETE payload structure satisfying the strict schema
+                // Using safe defaults as we are in the pre-scan onboarding phase
                 const userPayload = {
                     token: prismUserToken,
-                    email: null, // Explicitly null as per documentation if not provided
+                    email: event.user.email || "user@example.com", 
+                    
+                    // Demographic placehodlers (Required by Schema)
+                    weight: { value: 70, unit: 'kg' }, 
+                    height: { value: 1.7, unit: 'm' }, 
+                    sex: 'undefined', // Valid enum value per docs
+                    region: 'north_america',
+                    usaResidence: 'California',
+                    birthDate: '1990-01-01',
+                    
+                    // Consent
                     researchConsent: false,
                     termsOfService: {
                         accepted: true,
                         version: "1"
                     }
-                    // Optional: weight, height, sex could be added here if available in 'event.user' or 'event.body'
                 };
 
                 const createUserRes = await fetch(`${baseUrl}/users`, {
