@@ -7,15 +7,18 @@ interface Props {
 
 export const DigitalTwinIntro: React.FC<Props> = ({ onStartScan }) => {
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-between p-8 pb-12 animate-in fade-in duration-700">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-slate-950 text-white flex flex-col items-center justify-between p-6 pb-8 md:p-8 animate-in fade-in duration-700 overflow-hidden touch-none">
       
-      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md space-y-12">
+      {/* Top Spacer to balance layout if needed, though justify-between handles it. */}
+      <div className="h-2 shrink-0"></div>
+
+      <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md space-y-8 md:space-y-12 shrink-0">
         <div className="text-center space-y-2">
             <h1 className="text-3xl font-bold tracking-tight text-white">Create Your<br/>Digital Twin</h1>
             <p className="text-slate-400">Precision 3D body tracking</p>
         </div>
 
-        <div className="relative">
+        <div className="relative shrink-0">
             {/* Simple Glowing Silhouette */}
             <div className="relative z-10 w-48 h-48 md:w-64 md:h-64 flex items-center justify-center">
                 <User className="w-full h-full text-slate-800 fill-slate-900" strokeWidth={0.5} />
@@ -27,10 +30,10 @@ export const DigitalTwinIntro: React.FC<Props> = ({ onStartScan }) => {
         </div>
       </div>
 
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-6 z-20 shrink-0 pb-safe">
         <button 
             onClick={onStartScan}
-            className="w-full py-5 bg-white text-slate-950 font-bold text-xl rounded-full hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
+            className="w-full py-5 bg-white text-slate-950 font-bold text-xl rounded-full hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20 active:scale-[0.98] transform duration-100"
         >
             <ScanLine className="w-6 h-6" />
             Start 60-second scan
@@ -42,6 +45,9 @@ export const DigitalTwinIntro: React.FC<Props> = ({ onStartScan }) => {
           0%, 100% { top: 0%; opacity: 0; }
           15%, 85% { opacity: 1; }
           50% { top: 100%; }
+        }
+        .pb-safe {
+          padding-bottom: env(safe-area-inset-bottom, 0px);
         }
       `}</style>
     </div>
