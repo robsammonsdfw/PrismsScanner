@@ -35,5 +35,12 @@ export const PRISM_CONFIG_PLACEHOLDERS = {
   TOKEN: import.meta.env.VITE_PRISM_TOKEN || "",
   
   // Environment setting (e.g., 'sandbox', 'production')
-  ENVIRONMENT: import.meta.env.VITE_PRISM_ENV || "sandbox" 
+  ENVIRONMENT: import.meta.env.VITE_PRISM_ENV || "sandbox",
+
+  // Configuration for Asset ID
+  ASSET_CONFIG_ID: "ee651a9e-6de1-4621-a5c9-5d31ca874718",
+
+  // Valid API URLs
+  API_BASE_URL_SANDBOX: "https://sandbox-api.hosted.prismlabs.tech",
+  API_BASE_URL_PROD: "https://api.hosted.prismlabs.tech"
 };

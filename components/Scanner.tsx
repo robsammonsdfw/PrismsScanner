@@ -71,12 +71,22 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         ? undefined 
         : PRISM_CONFIG_PLACEHOLDERS.TOKEN;
 
+      // Determine correct API URL
+      const isProduction = PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT === 'production';
+      const apiBaseUrl = isProduction 
+        ? PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_PROD 
+        : PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_SANDBOX;
+
       // CONFIGURATION OBJECT
       const config: PrismConfig = {
         apiKey: PRISM_CONFIG_PLACEHOLDERS.API_KEY,
         scanId: scanId,
         token: tokenValue,
         mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
+        
+        // Critical Fixes: Correct API URL and Asset ID
+        apiBaseUrl: apiBaseUrl,
+        assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
         
         container: containerRef.current,
 
@@ -102,7 +112,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       };
 
       try {
-        console.log("Initializing Prism with ScanID:", scanId);
+        console.log("Initializing Prism with Config:", {
+           scanId,
+           mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
+           apiBaseUrl,
+           assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID
+        });
         prism.render(config);
       } catch (err) {
         console.error("Failed to render Prism UI:", err);

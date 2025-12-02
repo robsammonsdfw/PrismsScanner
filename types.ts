@@ -13,6 +13,8 @@ export interface PrismConfig {
   screen?: string; // e.g., 'landing', 'capture'
   container?: HTMLElement | string;
   mode?: string; // Added to support 'sandbox' or 'production' modes
+  apiBaseUrl?: string; // Custom API URL to override defaults (e.g. Prism vs Amplitude)
+  assetConfigId?: string; // Specific asset configuration ID
   
   // Translation overrides structure
   translationOverrides?: {
