@@ -165,7 +165,7 @@ const App: React.FC = () => {
 
   // 7. LANDING VIEW (Main Entry)
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+    <div className="min-h-[100dvh] bg-slate-50 text-slate-800 flex flex-col font-sans">
       <Navbar />
 
       <main className="flex-1 flex flex-col relative">

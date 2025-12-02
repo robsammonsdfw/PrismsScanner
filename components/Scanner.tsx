@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 // Importing the package often triggers the injection or availability of the global event
 import '@prismlabs/web-scan-ui-kit';
@@ -19,6 +18,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [error, setError] = useState<React.ReactNode | null>(null);
 
   useEffect(() => {
+    // Lock body scroll while Scanner is open to prevent background scrolling
+    document.body.style.overflow = 'hidden';
+
     // 1. VALIDATION: Check for HTTPS (Required for Camera)
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (window.location.protocol !== 'https:' && !isLocalhost) {
@@ -30,7 +32,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           <p className="mt-2 text-sm text-zinc-400">Please deploy to AWS Amplify (HTTPS) or use localhost.</p>
         </div>
       );
-      return;
+      return () => { document.body.style.overflow = ''; };
     }
 
     // 2. VALIDATION: Check for Missing API Key
@@ -46,7 +48,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           </div>
         </div>
       );
-      return;
+      return () => { document.body.style.overflow = ''; };
     }
 
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
@@ -85,8 +87,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         token: tokenValue,
         mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
         
-        // Critical Fix: Use 'apiBaseUrl' as the key. 
-        // This ensures the SDK uses the Prism endpoint instead of defaulting to Amplitude/internal.
+        // Critical Fix: Use 'apiBaseUrl' as the key based on SDK requirements.
         apiBaseUrl: endpointUrl,
         
         assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
@@ -139,6 +140,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     }, 5000);
 
     return () => {
+      // Unlock body scroll when component unmounts
+      document.body.style.overflow = '';
       window.removeEventListener('onPrismLoaded', handlePrismLoaded);
       clearTimeout(timeoutId);
     };
