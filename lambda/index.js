@@ -207,7 +207,9 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 ? "https://api.hosted.prismlabs.tech" 
                 : "https://sandbox-api.hosted.prismlabs.tech";
 
-            console.log(`[BodyScans] Using Environment: ${env} -> ${baseUrl}`);
+            // Mask key for logging safety
+            const maskedKey = PRISM_API_KEY ? `${PRISM_API_KEY.substring(0, 4)}...${PRISM_API_KEY.substring(PRISM_API_KEY.length - 4)}` : 'MISSING';
+            console.log(`[BodyScans] Init Config - Env: ${env}, Url: ${baseUrl}, Key: ${maskedKey}`);
 
             const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
             
@@ -230,9 +232,17 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 } else if (checkUserRes.status !== 404) {
                     const checkErr = await checkUserRes.text();
                     console.warn(`[BodyScans] Check user warning (${checkUserRes.status}): ${checkErr}`);
+                    
+                    if (checkUserRes.status === 401 || checkUserRes.status === 403) {
+                         throw new Error(`Authorization Failed during User Check: The PRISM_API_KEY appears invalid for the '${env}' environment.`);
+                    }
                 }
             } catch (checkErr) {
-                console.warn(`[BodyScans] Failed to check user existence:`, checkErr);
+                 // Propagate auth errors specifically
+                 if (checkErr.message && checkErr.message.includes("Authorization Failed")) {
+                     throw checkErr;
+                 }
+                 console.warn(`[BodyScans] Failed to check user existence:`, checkErr);
             }
 
             // 2. REGISTER NEW USER IF NOT EXISTS
@@ -250,6 +260,11 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     if (createUserRes.status !== 409) {
                         const createErr = await createUserRes.text();
                         console.error(`[BodyScans] Create User Error: ${createErr}`);
+                        
+                        if (createUserRes.status === 401 || createUserRes.status === 403) {
+                             throw new Error(`Authorization Failed during User Registration: The PRISM_API_KEY appears invalid for the '${env}' environment.`);
+                        }
+                        
                         throw new Error(`Prism User Registration Failed: ${createErr}`);
                     }
                 }
@@ -269,7 +284,12 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
 
             if (!scanRes.ok) {
                 const errorText = await scanRes.text();
-                console.error(`[BodyScans] Prism Create Scan Error: ${errorText}`);
+                console.error(`[BodyScans] Prism Create Scan Error (${scanRes.status}): ${errorText}`);
+                
+                if (scanRes.status === 401 || scanRes.status === 403) {
+                     throw new Error(`Authorization Failed during Scan Creation: The PRISM_API_KEY appears invalid for the '${env}' environment.`);
+                }
+                
                 throw new Error(`Prism Scan Creation Failed: ${errorText}`);
             }
             const scanData = await scanRes.json();
