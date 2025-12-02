@@ -74,7 +74,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
       // Determine correct API URL
       const isProduction = PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT === 'production';
-      const apiUrl = isProduction 
+      const endpointUrl = isProduction 
         ? PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_PROD 
         : PRISM_CONFIG_PLACEHOLDERS.API_BASE_URL_SANDBOX;
 
@@ -85,9 +85,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         token: tokenValue,
         mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
         
-        // Critical Fixes: Correct API URL and Asset ID
-        // Note: SDK usually expects 'apiUrl' for the endpoint override.
-        apiUrl: apiUrl,
+        // Critical Fix: Use 'apiBaseUrl' as the key. 
+        // This ensures the SDK uses the Prism endpoint instead of defaulting to Amplitude/internal.
+        apiBaseUrl: endpointUrl,
+        
         assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID,
         
         container: containerRef.current,
@@ -117,7 +118,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         console.log("Initializing Prism with Config:", {
            scanId,
            mode: PRISM_CONFIG_PLACEHOLDERS.ENVIRONMENT,
-           apiUrl,
+           apiBaseUrl: endpointUrl,
            assetConfigId: PRISM_CONFIG_PLACEHOLDERS.ASSET_CONFIG_ID
         });
         prism.render(config);
