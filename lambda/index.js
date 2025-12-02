@@ -195,15 +195,15 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
-            const { PRISM_API_KEY, PRISM_ENV } = process.env;
+            const { PRISM_API_KEY } = process.env;
             if (!PRISM_API_KEY) {
                 console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
                 return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
             }
 
-            const isProd = PRISM_ENV === 'production';
-            // Corrected Base URL and endpoints (Removed /v1 based on documentation)
-            const baseUrl = isProd ? "https://api.hosted.prismlabs.tech" : "https://sandbox-api.hosted.prismlabs.tech";
+            // Corrected Base URL: Use the Hosted API production URL for both sandbox and prod.
+            // The environment is determined by the API Key provided.
+            const baseUrl = "https://api.hosted.prismlabs.tech";
             const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
             
             // Generate a unique token for the user.
@@ -213,6 +213,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             // GET /users/{token}
             let userExists = false;
             try {
+                console.log(`[BodyScans] Checking if user exists at: ${baseUrl}/users/${prismUserToken}`);
                 const checkUserRes = await fetch(`${baseUrl}/users/${prismUserToken}`, {
                     method: 'GET',
                     headers: { 'x-api-key': PRISM_API_KEY }
@@ -232,11 +233,11 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             // 2. REGISTER NEW USER IF NOT EXISTS
             // POST /users
             if (!userExists) {
-                console.log(`[BodyScans] Registering new user: ${prismUserToken}`);
+                console.log(`[BodyScans] Registering new user at: ${baseUrl}/users`);
                 const createUserRes = await fetch(`${baseUrl}/users`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
-                    body: JSON.stringify({ token: prismUserToken }) // Use 'token' key, not 'externalId'
+                    body: JSON.stringify({ token: prismUserToken }) 
                 });
 
                 if (!createUserRes.ok) {
@@ -251,7 +252,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
 
             // 3. CREATE SCAN
             // POST /scans
-            console.log(`[BodyScans] Creating scan for user: ${prismUserToken}`);
+            console.log(`[BodyScans] Creating scan at: ${baseUrl}/scans`);
             const scanRes = await fetch(`${baseUrl}/scans`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
@@ -296,17 +297,13 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     if (method === 'POST') {
         const body = JSON.parse(event.body);
         
-        // If the frontend sends a 'scanId', it means the SDK scan is done.
-        // We must now fetch the Health Metrics from Prism (Server-to-Server)
         if (body.scanId) {
             try {
-                const { PRISM_API_KEY, PRISM_ENV } = process.env;
-                const isProd = PRISM_ENV === 'production';
-                const baseUrl = isProd ? "https://api.hosted.prismlabs.tech" : "https://sandbox-api.hosted.prismlabs.tech";
+                const { PRISM_API_KEY } = process.env;
+                // Always use hosted API Url
+                const baseUrl = "https://api.hosted.prismlabs.tech";
 
                 const fetchPrism = async (endpoint) => {
-                    // Removed /v1/ from endpoint construction as endpoint passed in should not have it,
-                    // or if we hardcode endpoints here, they should be root level.
                     const res = await fetch(`${baseUrl}${endpoint}`, {
                         headers: { 'x-api-key': PRISM_API_KEY }
                     });
@@ -318,17 +315,17 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 // 1. Get Basic Scan Status/Details
                 const scanDetails = await fetchPrism(`/scans/${body.scanId}`);
                 
-                // 2. Get Measurements (Step 6a)
+                // 2. Get Measurements
                 const measurements = await fetchPrism(`/scans/${body.scanId}/measurements`);
                 
-                // 3. Get Mass/Body Fat (Step 6b)
+                // 3. Get Mass/Body Fat
                 const mass = await fetchPrism(`/scans/${body.scanId}/mass`);
 
                 // Combine all data
                 const enrichedScanData = {
                     ...scanDetails,
                     measurements: measurements || {},
-                    composition: mass || {}, // Mass endpoint usually contains bodyFatPercentage
+                    composition: mass || {}, 
                     userGoal: body.userGoal,
                     status: scanDetails?.status || 'completed'
                 };
@@ -340,7 +337,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
 
             } catch (e) {
                 console.error("Error fetching/saving Prism data:", e);
-                // Fallback: Save what the frontend sent if server fetch fails, so we don't lose the record
+                // Fallback: Save what the frontend sent if server fetch fails
                 const fallbackScan = await saveBodyScan(userId, { ...body, note: "Server fetch failed, raw data only" });
                 return { statusCode: 201, headers, body: JSON.stringify(fallbackScan) };
             }
