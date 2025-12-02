@@ -43,7 +43,8 @@ export const handler = async (event) => {
         PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT,
         // NEW ENV VARS FOR PRISM
         PRISM_API_KEY,
-        PRISM_ENV // 'sandbox' or 'production'
+        PRISM_ENV, // 'sandbox' or 'production'
+        PRISM_API_URL // Optional override
     } = process.env;
     
     // Dynamic CORS configuration
@@ -194,18 +195,17 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
-            const { PRISM_API_KEY, PRISM_ENV } = process.env;
+            const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
             if (!PRISM_API_KEY) {
                 console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
                 return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
             }
 
             // Determine Environment and Base URL
-            // Default to sandbox unless explicitly set to 'production'
+            // Default to 'sandbox' environment logic, but use the 'api.hosted' URL as the user reported it works.
+            // If PRISM_API_URL env var is provided, it takes precedence.
             const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
-            const baseUrl = env === 'production' 
-                ? "https://api.hosted.prismlabs.tech" 
-                : "https://sandbox-api.hosted.prismlabs.tech";
+            const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech";
 
             // Mask key for logging safety
             const maskedKey = PRISM_API_KEY ? `${PRISM_API_KEY.substring(0, 4)}...${PRISM_API_KEY.substring(PRISM_API_KEY.length - 4)}` : 'MISSING';
@@ -234,7 +234,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     console.warn(`[BodyScans] Check user warning (${checkUserRes.status}): ${checkErr}`);
                     
                     if (checkUserRes.status === 401 || checkUserRes.status === 403) {
-                         throw new Error(`Authorization Failed during User Check: The PRISM_API_KEY appears invalid for the '${env}' environment.`);
+                         throw new Error(`Authorization Failed during User Check: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
                     }
                 }
             } catch (checkErr) {
@@ -249,10 +249,23 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             // POST /users
             if (!userExists) {
                 console.log(`[BodyScans] Registering new user at: ${baseUrl}/users`);
+                
+                // Use a complete payload structure
+                const userPayload = {
+                    token: prismUserToken,
+                    email: null, // Explicitly null as per documentation if not provided
+                    researchConsent: false,
+                    termsOfService: {
+                        accepted: true,
+                        version: "1"
+                    }
+                    // Optional: weight, height, sex could be added here if available in 'event.user' or 'event.body'
+                };
+
                 const createUserRes = await fetch(`${baseUrl}/users`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
-                    body: JSON.stringify({ token: prismUserToken }) 
+                    body: JSON.stringify(userPayload) 
                 });
 
                 if (!createUserRes.ok) {
@@ -262,7 +275,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                         console.error(`[BodyScans] Create User Error: ${createErr}`);
                         
                         if (createUserRes.status === 401 || createUserRes.status === 403) {
-                             throw new Error(`Authorization Failed during User Registration: The PRISM_API_KEY appears invalid for the '${env}' environment.`);
+                             throw new Error(`Authorization Failed during User Registration: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
                         }
                         
                         throw new Error(`Prism User Registration Failed: ${createErr}`);
@@ -287,7 +300,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 console.error(`[BodyScans] Prism Create Scan Error (${scanRes.status}): ${errorText}`);
                 
                 if (scanRes.status === 401 || scanRes.status === 403) {
-                     throw new Error(`Authorization Failed during Scan Creation: The PRISM_API_KEY appears invalid for the '${env}' environment.`);
+                     throw new Error(`Authorization Failed during Scan Creation: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
                 }
                 
                 throw new Error(`Prism Scan Creation Failed: ${errorText}`);
@@ -325,12 +338,10 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
         
         if (body.scanId) {
             try {
-                const { PRISM_API_KEY, PRISM_ENV } = process.env;
+                const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
                 
-                const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
-                const baseUrl = env === 'production' 
-                    ? "https://api.hosted.prismlabs.tech" 
-                    : "https://sandbox-api.hosted.prismlabs.tech";
+                // Determine base URL (same logic as init)
+                const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech";
 
                 const fetchPrism = async (endpoint) => {
                     const res = await fetch(`${baseUrl}${endpoint}`, {

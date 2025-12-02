@@ -43,9 +43,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         console.error("Initialization Failed:", err);
         setIsLoading(false);
         setError(
-            <div className="text-center">
-                <p className="font-bold text-red-400 mb-2">Connection Error</p>
-                <p className="text-sm">{err.message || "Could not start scan session."}</p>
+            <div className="text-center px-4">
+                <p className="font-bold text-red-400 mb-2 text-lg">Connection Error</p>
+                <p className="text-sm opacity-90 break-words">{err.message || "Could not start scan session."}</p>
             </div>
         );
       }
