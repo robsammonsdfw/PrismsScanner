@@ -202,54 +202,69 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             }
 
             const isProd = PRISM_ENV === 'production';
+            // Corrected Base URL and endpoints (Removed /v1 based on documentation)
             const baseUrl = isProd ? "https://api.hosted.prismlabs.tech" : "https://sandbox-api.hosted.prismlabs.tech";
             const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
             
-            // 1. Create User
-            const userExternalId = `user_${userId}`; 
-            // Note: We use the userId to keep it consistent.
-            const userRes = await fetch(`${baseUrl}/v1/users`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
-                body: JSON.stringify({ externalId: userExternalId })
-            });
+            // Generate a unique token for the user.
+            const prismUserToken = `user_${userId}`; 
             
-            let prismUserToken;
-            if (!userRes.ok) {
-                 if (userRes.status === 409) {
-                     // If user exists, try to create a unique session user or handle retrieval.
-                     // For stability in this demo, we ensure a fresh ID if the conflict occurs on a strict environment,
-                     // or we could implement a GET /users lookup. 
-                     // Here we try to create a distinct session ID fallback.
-                     const uniqueId = `${userExternalId}_${Date.now()}`;
-                     const retryRes = await fetch(`${baseUrl}/v1/users`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
-                        body: JSON.stringify({ externalId: uniqueId })
-                    });
-                    const retryData = await retryRes.json();
-                    prismUserToken = retryData.id || retryData._id || retryData.userToken;
-                 } else {
-                     const errorText = await userRes.text();
-                     console.error(`[BodyScans] Prism Create User Error: ${errorText}`);
-                     throw new Error(`Prism User Error: ${errorText}`);
-                 }
-            } else {
-                const userData = await userRes.json();
-                prismUserToken = userData.id || userData._id || userData.userToken;
+            // 1. CHECK IF USER EXISTS
+            // GET /users/{token}
+            let userExists = false;
+            try {
+                const checkUserRes = await fetch(`${baseUrl}/users/${prismUserToken}`, {
+                    method: 'GET',
+                    headers: { 'x-api-key': PRISM_API_KEY }
+                });
+
+                if (checkUserRes.ok) {
+                    userExists = true;
+                    console.log(`[BodyScans] User ${prismUserToken} already exists.`);
+                } else if (checkUserRes.status !== 404) {
+                    const checkErr = await checkUserRes.text();
+                    console.warn(`[BodyScans] Check user warning (${checkUserRes.status}): ${checkErr}`);
+                }
+            } catch (checkErr) {
+                console.warn(`[BodyScans] Failed to check user existence:`, checkErr);
             }
 
-            // 2. Create Scan
-            const scanRes = await fetch(`${baseUrl}/v1/scans`, {
+            // 2. REGISTER NEW USER IF NOT EXISTS
+            // POST /users
+            if (!userExists) {
+                console.log(`[BodyScans] Registering new user: ${prismUserToken}`);
+                const createUserRes = await fetch(`${baseUrl}/users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
+                    body: JSON.stringify({ token: prismUserToken }) // Use 'token' key, not 'externalId'
+                });
+
+                if (!createUserRes.ok) {
+                    // If 409 Conflict, it means user was created in a race condition, which is fine to proceed.
+                    if (createUserRes.status !== 409) {
+                        const createErr = await createUserRes.text();
+                        console.error(`[BodyScans] Create User Error: ${createErr}`);
+                        throw new Error(`Prism User Registration Failed: ${createErr}`);
+                    }
+                }
+            }
+
+            // 3. CREATE SCAN
+            // POST /scans
+            console.log(`[BodyScans] Creating scan for user: ${prismUserToken}`);
+            const scanRes = await fetch(`${baseUrl}/scans`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-api-key': PRISM_API_KEY },
-                body: JSON.stringify({ userToken: prismUserToken, assetConfigId: assetConfigId })
+                body: JSON.stringify({ 
+                    userToken: prismUserToken, 
+                    assetConfigId: assetConfigId 
+                })
             });
 
             if (!scanRes.ok) {
                 const errorText = await scanRes.text();
                 console.error(`[BodyScans] Prism Create Scan Error: ${errorText}`);
-                throw new Error(`Prism Scan Error: ${errorText}`);
+                throw new Error(`Prism Scan Creation Failed: ${errorText}`);
             }
             const scanData = await scanRes.json();
 
@@ -290,6 +305,8 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 const baseUrl = isProd ? "https://api.hosted.prismlabs.tech" : "https://sandbox-api.hosted.prismlabs.tech";
 
                 const fetchPrism = async (endpoint) => {
+                    // Removed /v1/ from endpoint construction as endpoint passed in should not have it,
+                    // or if we hardcode endpoints here, they should be root level.
                     const res = await fetch(`${baseUrl}${endpoint}`, {
                         headers: { 'x-api-key': PRISM_API_KEY }
                     });
@@ -299,13 +316,13 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 };
 
                 // 1. Get Basic Scan Status/Details
-                const scanDetails = await fetchPrism(`/v1/scans/${body.scanId}`);
+                const scanDetails = await fetchPrism(`/scans/${body.scanId}`);
                 
                 // 2. Get Measurements (Step 6a)
-                const measurements = await fetchPrism(`/v1/scans/${body.scanId}/measurements`);
+                const measurements = await fetchPrism(`/scans/${body.scanId}/measurements`);
                 
                 // 3. Get Mass/Body Fat (Step 6b)
-                const mass = await fetchPrism(`/v1/scans/${body.scanId}/mass`);
+                const mass = await fetchPrism(`/scans/${body.scanId}/mass`);
 
                 // Combine all data
                 const enrichedScanData = {
