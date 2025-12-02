@@ -69,19 +69,27 @@ const App: React.FC = () => {
     // 1. Show saving state
     setAppState(AppState.SAVING);
     
-    // Inject goal into data if needed
-    const completeData = { ...data, userGoal };
+    // Extract ID safely. The Prism SDK 'data' usually contains the ID or the object itself is the ID context.
+    // We send { scanId, userGoal } to backend so backend can fetch Metrics/FutureMe from Prism.
+    const scanId = data.id || data._id || (typeof data === 'string' ? data : null);
+    
+    const payload = { 
+        scanId: scanId,
+        userGoal: userGoal,
+        raw: data // Keep raw just in case
+    };
 
     try {
-        // 2. Save to backend
-        const savedRecord = await saveBodyScan(completeData);
-        // 3. Update state with the record returned from DB (includes timestamp/ID)
+        // 2. Save to backend (Backend will fetch Metrics from Prism)
+        const savedRecord = await saveBodyScan(payload);
+        
+        // 3. Update state with the rich record returned from DB (measurements, composition, etc)
         setScanData(savedRecord);
         setAppState(AppState.DASHBOARD);
     } catch (err) {
         console.error("Failed to save scan to database", err);
-        // Fallback: Show report with local data even if save failed, but log error
-        setScanData({ scan_data: completeData }); 
+        // Fallback: Show dashboard with local data even if save failed
+        setScanData({ scan_data: data }); 
         setAppState(AppState.DASHBOARD);
     }
   };
@@ -138,7 +146,7 @@ const App: React.FC = () => {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white z-50">
             <Loader2 className="w-12 h-12 animate-spin text-emerald-500 mb-4" />
-            <p className="text-lg font-medium">Saving your digital twin...</p>
+            <p className="text-lg font-medium">Processing health metrics...</p>
         </div>
       );
   }

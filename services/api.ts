@@ -11,6 +11,19 @@ const getHeaders = () => {
   };
 };
 
+export const initScanSession = async () => {
+    const response = await fetch(`${API_BASE_URL}/body-scans/init`, {
+        method: 'POST',
+        headers: getHeaders()
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to initialize scan session via backend.');
+    }
+
+    return response.json();
+};
+
 export const saveBodyScan = async (data: any) => {
   const response = await fetch(`${API_BASE_URL}/body-scans`, {
     method: 'POST',
