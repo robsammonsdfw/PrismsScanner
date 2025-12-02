@@ -202,10 +202,9 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             }
 
             // Determine Environment and Base URL
-            // Default to 'sandbox' environment logic, but use the 'api.hosted' URL as the user reported it works.
-            // If PRISM_API_URL env var is provided, it takes precedence.
+            // Appending /v1 to ensure we hit the correct versioned endpoint as per analysis of 404 errors.
             const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
-            const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech";
+            const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech/v1";
 
             // Mask key for logging safety
             const maskedKey = PRISM_API_KEY ? `${PRISM_API_KEY.substring(0, 4)}...${PRISM_API_KEY.substring(PRISM_API_KEY.length - 4)}` : 'MISSING';
@@ -351,7 +350,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
                 
                 // Determine base URL (same logic as init)
-                const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech";
+                const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech/v1";
 
                 const fetchPrism = async (endpoint) => {
                     const res = await fetch(`${baseUrl}${endpoint}`, {
