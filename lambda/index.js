@@ -196,10 +196,16 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
             const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
+
+            // --- DEBUG: LOG RAW KEY ---
+            console.log(`[BodyScans] Raw PRISM_API_KEY: "${PRISM_API_KEY}"`);
+            
             if (!PRISM_API_KEY) {
                 console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
                 return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
             }
+
+            const finalApiKey = PRISM_API_KEY.trim();
 
             // Determine Environment and Base URL
             // Robust check for 'production' (case insensitive, trimmed)
@@ -214,7 +220,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             const baseUrl = PRISM_API_URL || defaultUrl;
 
             // Mask key for logging safety
-            const maskedKey = PRISM_API_KEY ? `${PRISM_API_KEY.substring(0, 4)}...${PRISM_API_KEY.substring(PRISM_API_KEY.length - 4)}` : 'MISSING';
+            const maskedKey = finalApiKey ? `${finalApiKey.substring(0, 4)}...${finalApiKey.substring(finalApiKey.length - 4)}` : 'MISSING';
             console.log(`[BodyScans] Init Config - Env: ${env}, Url: ${baseUrl}, Key: ${maskedKey}`);
 
             const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
@@ -224,7 +230,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             
             // Standard Headers for Prism v1 API
             const prismHeaders = {
-                'x-api-key': PRISM_API_KEY,
+                'x-api-key': finalApiKey,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json;v=1'
             };
@@ -369,11 +375,13 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     baseUrl = "https://api.hosted.prismlabs.tech";
                 }
                 if (PRISM_API_URL) baseUrl = PRISM_API_URL;
+                
+                const finalApiKey = PRISM_API_KEY ? PRISM_API_KEY.trim() : '';
 
                 const fetchPrism = async (endpoint) => {
                     const res = await fetch(`${baseUrl}${endpoint}`, {
                         headers: { 
-                            'x-api-key': PRISM_API_KEY,
+                            'x-api-key': finalApiKey,
                             'Accept': 'application/json;v=1'
                         }
                     });
