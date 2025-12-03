@@ -202,9 +202,15 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             }
 
             // Determine Environment and Base URL
-            // Per developer feedback: No /v1 in path, strictly use Accept header for versioning.
+            // Default to Sandbox unless explicitly set to production
             const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
-            const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech";
+            
+            let defaultUrl = "https://sandbox-api.hosted.prismlabs.tech";
+            if (env === 'production') {
+                defaultUrl = "https://api.hosted.prismlabs.tech";
+            }
+            
+            const baseUrl = PRISM_API_URL || defaultUrl;
 
             // Mask key for logging safety
             const maskedKey = PRISM_API_KEY ? `${PRISM_API_KEY.substring(0, 4)}...${PRISM_API_KEY.substring(PRISM_API_KEY.length - 4)}` : 'MISSING';
@@ -356,7 +362,12 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
                 
                 // Determine base URL (same logic as init)
-                const baseUrl = PRISM_API_URL || "https://api.hosted.prismlabs.tech";
+                const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
+                let baseUrl = "https://sandbox-api.hosted.prismlabs.tech";
+                if (env === 'production') {
+                    baseUrl = "https://api.hosted.prismlabs.tech";
+                }
+                if (PRISM_API_URL) baseUrl = PRISM_API_URL;
 
                 const fetchPrism = async (endpoint) => {
                     const res = await fetch(`${baseUrl}${endpoint}`, {
