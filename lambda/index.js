@@ -202,11 +202,12 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             }
 
             // Determine Environment and Base URL
-            // Default to Sandbox unless explicitly set to production
-            const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
+            // Robust check for 'production' (case insensitive, trimmed)
+            const isProduction = (PRISM_ENV || '').trim().toLowerCase() === 'production';
+            const env = isProduction ? 'production' : 'sandbox';
             
             let defaultUrl = "https://sandbox-api.hosted.prismlabs.tech";
-            if (env === 'production') {
+            if (isProduction) {
                 defaultUrl = "https://api.hosted.prismlabs.tech";
             }
             
@@ -362,9 +363,9 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
                 
                 // Determine base URL (same logic as init)
-                const env = PRISM_ENV === 'production' ? 'production' : 'sandbox';
+                const isProduction = (PRISM_ENV || '').trim().toLowerCase() === 'production';
                 let baseUrl = "https://sandbox-api.hosted.prismlabs.tech";
-                if (env === 'production') {
+                if (isProduction) {
                     baseUrl = "https://api.hosted.prismlabs.tech";
                 }
                 if (PRISM_API_URL) baseUrl = PRISM_API_URL;
