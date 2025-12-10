@@ -252,8 +252,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             // SWITCHED TO BEARER TOKEN AUTH AS REQUESTED
             const prismHeaders = {
                 'Authorization': `Bearer ${finalApiKey}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json;v=1'
+                'Content-Type': 'application/json'
             };
 
             // 1. CHECK IF USER EXISTS
@@ -296,9 +295,9 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     email: event.user.email || "user@example.com", 
                     
                     // Demographic placeholders (Required by Schema)
-                    weight: { value: 70, unit: 'kg' }, 
-                    height: { value: 1.7, unit: 'm' }, 
-                    sex: 'undefined', // Valid enum value per docs
+                    weight: { value: 80, unit: 'kg' }, 
+                    height: { value: 1.8, unit: 'm' }, 
+                    sex: 'male', 
                     region: 'north_america',
                     usaResidence: 'California',
                     birthDate: '1990-01-01',
