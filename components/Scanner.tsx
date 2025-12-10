@@ -4,7 +4,7 @@ import '@prismlabs/web-scan-ui-kit';
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { PRISM_CONFIG_PLACEHOLDERS } from '../constants';
 import { initScanSession } from '../services/api';
-import { Loader2, X, AlertTriangle } from 'lucide-react';
+import { Loader2, X, AlertTriangle, LogOut } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -17,6 +17,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [statusMessage, setStatusMessage] = useState<string>("Initializing...");
   const [error, setError] = useState<React.ReactNode | null>(null);
+  const [isAuthError, setIsAuthError] = useState<boolean>(false);
 
   useEffect(() => {
     // Lock body scroll while Scanner is open
@@ -42,12 +43,20 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       } catch (err: any) {
         console.error("Initialization Failed:", err);
         setIsLoading(false);
-        setError(
-            <div className="text-center px-4">
-                <p className="font-bold text-red-400 mb-2 text-lg">Connection Error</p>
-                <p className="text-sm opacity-90 break-words">{err.message || "Could not start scan session."}</p>
-            </div>
-        );
+        
+        // Check for specific Auth errors (JWT Expired)
+        const errorMessage = err.message || "";
+        if (errorMessage.toLowerCase().includes('jwt expired') || errorMessage.toLowerCase().includes('unauthorized') || errorMessage.includes('401')) {
+            setIsAuthError(true);
+            setError("Your session has expired. Please log in again to continue.");
+        } else {
+            setError(
+                <div className="text-center px-4">
+                    <p className="font-bold text-red-400 mb-2 text-lg">Connection Error</p>
+                    <p className="text-sm opacity-90 break-words">{errorMessage || "Could not start scan session."}</p>
+                </div>
+            );
+        }
       }
     };
 
@@ -125,6 +134,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleLoginRedirect = () => {
+      // Clear the expired token
+      localStorage.removeItem('embracehealth-api-token');
+      // Redirect to main app login
+      window.location.href = 'https://main.embracehealth.ai';
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center">
       <div 
@@ -143,10 +159,29 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       {error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900 z-[70] p-6">
           <div className="bg-red-900/20 p-4 rounded-full mb-6">
-            {typeof error === 'string' ? <X className="w-10 h-10 text-red-500" /> : <AlertTriangle className="w-10 h-10 text-amber-500" />}
+            {isAuthError ? (
+                <LogOut className="w-10 h-10 text-red-500" />
+            ) : (
+                typeof error === 'string' ? <X className="w-10 h-10 text-red-500" /> : <AlertTriangle className="w-10 h-10 text-amber-500" />
+            )}
           </div>
-          <div className="max-w-sm w-full text-zinc-200 mb-8 text-center">{error}</div>
-          <button onClick={onClose} className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg font-semibold w-full max-w-xs">Return to Home</button>
+          
+          <div className="max-w-sm w-full text-zinc-200 mb-8 text-center">
+            {typeof error === 'string' ? <p className="text-lg font-medium">{error}</p> : error}
+          </div>
+
+          {isAuthError ? (
+            <button 
+                onClick={handleLoginRedirect} 
+                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold w-full max-w-xs transition-colors shadow-lg shadow-emerald-900/20"
+            >
+                Log In Again
+            </button>
+          ) : (
+            <button onClick={onClose} className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg font-semibold w-full max-w-xs">
+                Return to Home
+            </button>
+          )}
         </div>
       )}
     </div>
