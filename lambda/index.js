@@ -133,12 +133,14 @@ export const handler = async (event) => {
 
     const token = normalizedHeaders['authorization']?.split(' ')[1];
     if (!token) {
+        console.warn("[Auth] No Bearer token provided in headers.");
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized: No token provided.' })};
     }
 
     try {
         event.user = jwt.verify(token, JWT_SECRET);
     } catch (err) {
+        console.error(`[Auth] JWT Verification Failed: ${err.message}`);
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized: Invalid token.' })};
     }
 
