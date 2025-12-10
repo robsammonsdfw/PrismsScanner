@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import jwt from 'jsonwebtoken';
 import https from 'https';
@@ -34,6 +33,13 @@ import { Buffer } from 'buffer';
 
 // --- MAIN HANDLER (ROUTER) ---
 export const handler = async (event) => {
+    // --- DEBUG LOGGING START ---
+    console.log("[Handler] Request Received");
+    console.log("[Handler] Runtime:", process.version);
+    console.log("[Handler] Path:", event.rawPath || event.path || event.requestContext?.http?.path);
+    console.log("[Handler] Headers Keys:", event.headers ? Object.keys(event.headers).join(', ') : "None");
+    // ---------------------------
+
     // --- IMPORTANT: CONFIGURE THESE IN YOUR LAMBDA ENVIRONMENT VARIABLES ---
     const {
         GEMINI_API_KEY,
@@ -48,6 +54,9 @@ export const handler = async (event) => {
         PRISM_API_URL // Optional override
     } = process.env;
     
+    // Debug Config (Safe)
+    console.log(`[Handler] Config Check - JWT_SECRET present: ${!!JWT_SECRET}`);
+
     // Dynamic CORS configuration
     const allowedOrigins = [
         "https://food.embracehealth.ai",
@@ -141,7 +150,15 @@ export const handler = async (event) => {
         event.user = jwt.verify(token, JWT_SECRET);
     } catch (err) {
         console.error(`[Auth] JWT Verification Failed: ${err.message}`);
-        return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized: Invalid token.' })};
+        // Return detailed error to help debug frontend/backend mismatch
+        return { 
+            statusCode: 401, 
+            headers, 
+            body: JSON.stringify({ 
+                error: 'Unauthorized: Invalid token.',
+                details: err.message
+            })
+        };
     }
 
     const pathParts = path.split('/').filter(Boolean);
