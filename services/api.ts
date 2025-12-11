@@ -12,10 +12,11 @@ const getHeaders = () => {
   };
 };
 
-export const initScanSession = async () => {
+export const initScanSession = async (deviceConfigName?: string) => {
     const response = await fetch(`${API_BASE_URL}/body-scans/init`, {
         method: 'POST',
-        headers: getHeaders()
+        headers: getHeaders(),
+        body: JSON.stringify({ deviceConfigName: deviceConfigName || 'ANDROID_SCANNER' })
     });
 
     if (!response.ok) {

@@ -215,11 +215,34 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
     if (method === 'POST' && pathParts[1] === 'init') {
         try {
+            // Robust Body Parsing (Handle Base64 if from Proxy Integration)
+            let requestBody = {};
+            try {
+                let bodyContent = event.body;
+                if (event.isBase64Encoded) {
+                    bodyContent = Buffer.from(event.body, 'base64').toString('utf-8');
+                }
+                
+                if (typeof bodyContent === 'string') {
+                    requestBody = JSON.parse(bodyContent);
+                } else if (typeof bodyContent === 'object') {
+                    requestBody = bodyContent;
+                }
+            } catch (e) {
+                console.warn("[BodyScans] Failed to parse init body, will default device config", e);
+            }
+
+            // Strictly default to ANDROID_SCANNER if not explicitly IPHONE_SCANNER. 
+            // This prevents "deviceConfigName cannot be empty" errors from Prism.
+            let deviceConfigName = 'ANDROID_SCANNER';
+            if (requestBody && requestBody.deviceConfigName === 'IPHONE_SCANNER') {
+                deviceConfigName = 'IPHONE_SCANNER';
+            }
+
+            console.log(`[BodyScans] Using deviceConfigName: ${deviceConfigName}`);
+
             const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
 
-            // --- DEBUG: LOG RAW KEY ---
-            console.log(`[BodyScans] Raw PRISM_API_KEY: "${PRISM_API_KEY}"`);
-            
             if (!PRISM_API_KEY) {
                 console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
                 return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
@@ -228,7 +251,6 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
             const finalApiKey = PRISM_API_KEY.trim();
 
             // Determine Environment and Base URL
-            // Robust check for 'production' (case insensitive, trimmed)
             const isProduction = (PRISM_ENV || '').trim().toLowerCase() === 'production';
             const env = isProduction ? 'production' : 'sandbox';
             
@@ -241,25 +263,21 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
 
             // Mask key for logging safety
             const maskedKey = finalApiKey ? `${finalApiKey.substring(0, 4)}...${finalApiKey.substring(finalApiKey.length - 4)}` : 'MISSING';
-            console.log(`[BodyScans] Init Config - Env: ${env}, Url: ${baseUrl}, Key: ${maskedKey}`);
+            console.log(`[BodyScans] Init Config - Env: ${env}, Url: ${baseUrl}, Key: ${maskedKey}, Device: ${deviceConfigName}`);
 
             const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
             
             // Generate a unique token for the user.
             const prismUserToken = `user_${userId}`; 
             
-            // Standard Headers for Prism v1 API
-            // SWITCHED TO BEARER TOKEN AUTH AS REQUESTED
             const prismHeaders = {
                 'Authorization': `Bearer ${finalApiKey}`,
                 'Content-Type': 'application/json'
             };
 
             // 1. CHECK IF USER EXISTS
-            // GET /users/{token}
             let userExists = false;
             try {
-                console.log(`[BodyScans] Checking if user exists at: ${baseUrl}/users/${prismUserToken}`);
                 const checkUserRes = await fetch(`${baseUrl}/users/${prismUserToken}`, {
                     method: 'GET',
                     headers: prismHeaders
@@ -267,55 +285,27 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
 
                 if (checkUserRes.ok) {
                     userExists = true;
-                    console.log(`[BodyScans] User ${prismUserToken} already exists.`);
                 } else if (checkUserRes.status !== 404) {
-                    const checkErr = await checkUserRes.text();
-                    console.warn(`[BodyScans] Check user warning (${checkUserRes.status}): ${checkErr}`);
-                    
-                    if (checkUserRes.status === 401 || checkUserRes.status === 403) {
-                         throw new Error(`Authorization Failed during User Check: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
-                    }
+                    console.warn(`[BodyScans] Check user warning (${checkUserRes.status})`);
                 }
             } catch (checkErr) {
-                 // Propagate auth errors specifically
-                 if (checkErr.message && checkErr.message.includes("Authorization Failed")) {
-                     throw checkErr;
-                 }
                  console.warn(`[BodyScans] Failed to check user existence:`, checkErr);
             }
 
             // 2. REGISTER NEW USER IF NOT EXISTS
-            // POST /users
             if (!userExists) {
-                console.log(`[BodyScans] Registering new user at: ${baseUrl}/users`);
-                
-                // Use a COMPLETE payload structure satisfying the strict schema
                 const userPayload = {
                     token: prismUserToken,
                     email: event.user.email || "user@example.com", 
-                    
-                    // Demographic placeholders (Required by Schema)
                     weight: { value: 80, unit: 'kg' }, 
                     height: { value: 1.8, unit: 'm' }, 
                     sex: 'male', 
                     region: 'north_america',
                     usaResidence: 'California',
                     birthDate: '1990-01-01',
-                    
-                    // Consent - MUST BE TRUE per dev feedback
                     researchConsent: true,
-                    termsOfService: {
-                        accepted: true,
-                        version: "1"
-                    }
+                    termsOfService: { accepted: true, version: "1" }
                 };
-
-                // --- DEBUG: LOG FULL REQUEST FOR DEVELOPER ---
-                console.log("[BodyScans] DEBUG: Sending User Registration Request");
-                console.log("URL:", `${baseUrl}/users`);
-                console.log("Headers:", JSON.stringify({ ...prismHeaders, 'Authorization': 'Bearer ***MASKED***' }, null, 2));
-                console.log("Body:", JSON.stringify(userPayload, null, 2));
-                // ---------------------------------------------
 
                 const createUserRes = await fetch(`${baseUrl}/users`, {
                     method: 'POST',
@@ -323,30 +313,22 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                     body: JSON.stringify(userPayload) 
                 });
 
-                if (!createUserRes.ok) {
-                    // If 409 Conflict, it means user was created in a race condition, which is fine to proceed.
-                    if (createUserRes.status !== 409) {
-                        const createErr = await createUserRes.text();
-                        console.error(`[BodyScans] Create User Error: ${createErr}`);
-                        
-                        if (createUserRes.status === 401 || createUserRes.status === 403) {
-                             throw new Error(`Authorization Failed during User Registration: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
-                        }
-                        
-                        throw new Error(`Prism User Registration Failed: ${createErr}`);
-                    }
+                if (!createUserRes.ok && createUserRes.status !== 409) {
+                     const createErr = await createUserRes.text();
+                     console.error(`[BodyScans] Create User Error: ${createErr}`);
+                     throw new Error(`Prism User Registration Failed: ${createErr}`);
                 }
             }
 
             // 3. CREATE SCAN
-            // POST /scans
             console.log(`[BodyScans] Creating scan at: ${baseUrl}/scans`);
             const scanRes = await fetch(`${baseUrl}/scans`, {
                 method: 'POST',
                 headers: prismHeaders,
                 body: JSON.stringify({ 
                     userToken: prismUserToken, 
-                    assetConfigId: assetConfigId 
+                    assetConfigId: assetConfigId,
+                    deviceConfigName: deviceConfigName // Pass the device config detected from frontend
                 })
             });
 
@@ -355,7 +337,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
                 console.error(`[BodyScans] Prism Create Scan Error (${scanRes.status}): ${errorText}`);
                 
                 if (scanRes.status === 401 || scanRes.status === 403) {
-                     throw new Error(`Authorization Failed during Scan Creation: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
+                     throw new Error(`Authorization Failed during Scan Creation: Check PRISM_API_KEY.`);
                 }
                 
                 throw new Error(`Prism Scan Creation Failed: ${errorText}`);

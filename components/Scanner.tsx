@@ -23,15 +23,41 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     // Lock body scroll while Scanner is open
     document.body.style.overflow = 'hidden';
 
+    // Helper to strictly detect device type
+    const getDeviceConfig = (): string => {
+        try {
+            const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera || '';
+            
+            // iOS detection (iPhone, iPod, standard iPad)
+            if (/iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream) {
+                return 'IPHONE_SCANNER';
+            }
+            
+            // iPad on iPadOS 13+ detection (often reports as MacIntel)
+            if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) {
+                return 'IPHONE_SCANNER';
+            }
+
+            // Default all other devices (Android, Desktop, etc.) to ANDROID_SCANNER
+            return 'ANDROID_SCANNER';
+        } catch (e) {
+            console.warn("Device detection failed, defaulting to Android", e);
+            return 'ANDROID_SCANNER';
+        }
+    };
+
     // 1. HAPPY PATH VIA BACKEND (Solves CORS)
     // We call our own API, which then talks to Prism server-to-server.
     const startSession = async () => {
       try {
         setStatusMessage("Connecting to secure server...");
         
+        const deviceConfigName = getDeviceConfig();
+        console.log("Initializing scan for device type:", deviceConfigName);
+        
         // This calls POST /body-scans/init on your backend
         // Your backend uses the hidden API Key to create the User & Scan
-        const sessionData = await initScanSession();
+        const sessionData = await initScanSession(deviceConfigName);
         
         const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
         console.log("[Happy Path] Session Initialized via Backend:", scanId, "Mode:", mode);
