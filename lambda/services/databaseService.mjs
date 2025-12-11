@@ -110,7 +110,7 @@ const ensureDatabaseSchema = async (client) => {
 };
 
 
-export const findOrCreateUserByEmail = async (email) => {
+export const findOrCreateUserByEmail = async (email, shopifyId = null) => {
     const client = await pool.connect();
     try {
         // Ensure schema is up to date when user logs in
@@ -818,3 +818,14 @@ export const getBodyScans = async (userId) => {
         client.release();
     }
 };
+
+// --- Stubs for new imports in index.js ---
+export const getSleepRecords = async (userId) => { return []; };
+export const saveSleepRecord = async (userId, data) => { return { id: 1, ...data }; };
+export const getUserEntitlements = async (userId) => { return []; };
+export const getUserByShopifyId = async (shopifyId) => { return null; };
+export const grantEntitlement = async (userId, entitlement) => { };
+export const recordPurchase = async (userId, orderId, sku, itemName) => { };
+export const getDashboardPulse = async () => { return {}; };
+export const getCompetitors = async () => { return []; };
+export const getSWOTInsights = async (region) => { return {}; };
