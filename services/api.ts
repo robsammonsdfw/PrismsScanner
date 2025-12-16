@@ -2,6 +2,10 @@
 // This service communicates with the same backend lambda used by the main Food App.
 // We prioritize the environment variable, but keep the hardcoded URL as a fallback for local development if .env is missing.
 const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/default';
+
+// New: Dedicated scanner microservice URL. Falls back to main API for backwards compatibility if not set.
+const SCANNER_API_URL = import.meta.env.VITE_SCANNER_API_URL || API_BASE_URL;
+
 const AUTH_TOKEN_KEY = 'embracehealth-api-token';
 
 const getHeaders = () => {
@@ -13,7 +17,15 @@ const getHeaders = () => {
 };
 
 export const initScanSession = async (deviceConfigName?: string) => {
-    const response = await fetch(`${API_BASE_URL}/body-scans/init`, {
+    // Note: If using separate lambda, the path might be just "/init" depending on API Gateway mapping
+    // We assume the URL includes the stage but not the specific resource if it's a microservice root
+    // For safety, we append /init to the base Scanner URL.
+    
+    // Check if the URL already ends in a slash to avoid double slash
+    const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
+    const endpoint = `${baseUrl}/init`; 
+
+    const response = await fetch(endpoint, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ deviceConfigName: deviceConfigName || 'ANDROID_SCANNER' })
@@ -39,7 +51,10 @@ export const initScanSession = async (deviceConfigName?: string) => {
 };
 
 export const saveBodyScan = async (data: any) => {
-  const response = await fetch(`${API_BASE_URL}/body-scans`, {
+  const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
+  const endpoint = `${baseUrl}`; // Root POST for saving
+
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -53,7 +68,10 @@ export const saveBodyScan = async (data: any) => {
 };
 
 export const getScanHistory = async () => {
-  const response = await fetch(`${API_BASE_URL}/body-scans`, {
+  const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
+  const endpoint = `${baseUrl}`; // Root GET for history
+
+  const response = await fetch(endpoint, {
     method: 'GET',
     headers: getHeaders()
   });

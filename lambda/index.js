@@ -27,15 +27,11 @@ import {
     getRewardsSummary,
     getSavedMealById,
     getMealLogEntryById,
-    saveBodyScan,
-    getBodyScans,
     getSleepRecords,
     saveSleepRecord,
     getUserEntitlements,
-    getUserByShopifyId,
     grantEntitlement,
     recordPurchase,
-    // --- NEW DASHBOARD LOGIC IMPORTS ---
     getDashboardPulse,
     getCompetitors,
     getSWOTInsights
@@ -44,14 +40,11 @@ import { Buffer } from 'buffer';
 
 // --- MAIN HANDLER (ROUTER) ---
 export const handler = async (event) => {
-    // --- DEBUG LOGGING START (Added from index.js) ---
-    console.log("[Handler] Request Received");
-    console.log("[Handler] Runtime:", process['version']);
-    console.log("[Handler] Path:", event.rawPath || event.path || event.requestContext?.http?.path);
-    console.log("[Handler] Headers Keys:", event.headers ? Object.keys(event.headers).join(', ') : "None");
-    // ---------------------------
+    // --- DEBUG LOGGING ---
+    console.log("[MainHandler] Request Received");
+    console.log("[MainHandler] Path:", event.rawPath || event.path || event.requestContext?.http?.path);
 
-    // --- IMPORTANT: CONFIGURE THESE IN YOUR LAMBDA ENVIRONMENT VARIABLES ---
+    // --- CONFIGURATION ---
     const {
         GEMINI_API_KEY,
         SHOPIFY_STOREFRONT_TOKEN,
@@ -59,20 +52,8 @@ export const handler = async (event) => {
         JWT_SECRET,
         FRONTEND_URL,
         PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT,
-        // NEW ENV VARS FOR PRISM
-        PRISM_API_KEY,
-        PRISM_ENV, // 'sandbox' or 'production'
-        PRISM_API_URL, // Optional override
-        SHOPIFY_WEBHOOK_SECRET,
-        // JWT CONFIG
-        JWT_EXPIRATION_HOURS
+        SHOPIFY_WEBHOOK_SECRET
     } = process.env;
-
-    // Debug Config (Safe)
-    console.log(`[Handler] Config Check - JWT_SECRET present: ${!!JWT_SECRET}`);
-    if (JWT_EXPIRATION_HOURS) {
-        console.log(`[Handler] Config Check - Custom JWT Expiration: ${JWT_EXPIRATION_HOURS} hours`);
-    }
 
     // Dynamic CORS configuration
     const allowedOrigins = [
@@ -103,23 +84,19 @@ export const handler = async (event) => {
     // --- SAFETY CHECK ---
     const requiredEnvVars = [
         'GEMINI_API_KEY', 'SHOPIFY_STOREFRONT_TOKEN', 'SHOPIFY_STORE_DOMAIN',
-        'JWT_SECRET', 'FRONTEND_URL', 'PGHOST', 'PGUSER', 'PGPASSWORD',
-        'PGDATABASE', 'PGPORT'
-        // PRISM_API_KEY is validated inside the specific handler to allow partial app function if missing
+        'JWT_SECRET', 'FRONTEND_URL', 'PGHOST'
     ];
 
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
     if (missingVars.length > 0) {
-        const errorMessage = `Configuration error: The following required environment variables are missing: ${missingVars.join(', ')}.`;
-        console.error(errorMessage);
+        console.error(`Missing Env Vars: ${missingVars.join(', ')}`);
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: errorMessage }),
+            body: JSON.stringify({ error: 'Server configuration error.' }),
         };
     }
-    // -------------------------------------------
 
     let path;
     let method;
@@ -147,7 +124,6 @@ export const handler = async (event) => {
     }
 
     // --- PUBLIC WEBHOOKS ---
-    // Handle Shopify Order Creation Webhook
     if (path === '/webhooks/shopify/order-created' && method === 'POST') {
         return await handleShopifyWebhook(event, SHOPIFY_WEBHOOK_SECRET);
     }
@@ -158,7 +134,6 @@ export const handler = async (event) => {
     }
 
     // --- AUTHENTICATED ROUTES ---
-
     const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
     const normalizedHeaders = {};
@@ -170,23 +145,13 @@ export const handler = async (event) => {
 
     const token = normalizedHeaders['authorization']?.split(' ')[1];
     if (!token) {
-        console.warn("[Auth] No Bearer token provided in headers.");
         return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized: No token provided.' }) };
     }
 
     try {
         event.user = jwt.verify(token, JWT_SECRET);
     } catch (err) {
-        console.error(`[Auth] JWT Verification Failed: ${err.message}`);
-        // Return detailed error to help debug frontend/backend mismatch
-        return {
-            statusCode: 401,
-            headers,
-            body: JSON.stringify({
-                error: 'Unauthorized: Invalid token.',
-                details: err.message
-            })
-        };
+        return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized: Invalid token.' }) };
     }
 
     const pathParts = path.split('/').filter(Boolean);
@@ -197,12 +162,6 @@ export const handler = async (event) => {
         if (resource === 'dashboard') {
             return await handleDashboardRequest(event, headers, method, pathParts);
         }
-
-        // --- NEW RESOURCE FOR BODY SCANS ---
-        if (resource === 'body-scans') {
-            return await handleBodyScansRequest(event, headers, method, pathParts);
-        }
-
         // --- EXISTING RESOURCES ---
         if (resource === 'sleep-records') {
             return await handleSleepRecordsRequest(event, headers, method);
@@ -246,346 +205,59 @@ export const handler = async (event) => {
     };
 };
 
-// --- HANDLER FOR DASHBOARD (NEW) ---
-async function handleDashboardRequest(event, headers, method, pathParts) {
-    // API Shell: Routing logic for dashboard namespace
-    const subResource = pathParts[1];
+// --- HANDLERS ---
 
+async function handleDashboardRequest(event, headers, method, pathParts) {
+    const subResource = pathParts[1];
     if (subResource === 'exec-pulse') {
-        if (method !== 'GET') {
-            return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
-        }
+        if (method !== 'GET') return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
         const pulseData = await getDashboardPulse();
         return { statusCode: 200, headers, body: JSON.stringify(pulseData) };
     }
-
     if (subResource === 'swot') {
         if (method === 'GET') {
-            // Optional region filtering via query params
             const region = event.queryStringParameters?.region || null;
             const insights = await getSWOTInsights(region);
             return { statusCode: 200, headers, body: JSON.stringify(insights) };
         }
-        // POST to be handled in next steps
     }
-
     if (subResource === 'competitors') {
-        if (method !== 'GET') {
-            return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
-        }
+        if (method !== 'GET') return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
         const competitors = await getCompetitors();
         return { statusCode: 200, headers, body: JSON.stringify(competitors) };
     }
-
     return { statusCode: 404, headers, body: JSON.stringify({ error: 'Dashboard resource not found.' }) };
 }
 
-// --- HANDLER FOR BODY SCANS ---
-async function handleBodyScansRequest(event, headers, method, pathParts) {
-    const userId = event.user.userId;
-    console.log(`[BodyScans] Processing request: ${method} ${pathParts.join('/')}`);
-
-    // POST /body-scans/init -> Initialize a new session with Prism (Server-to-Server to avoid CORS)
-    if (method === 'POST' && pathParts[1] === 'init') {
-        try {
-            const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
-
-            // --- DEBUG: LOG RAW KEY ---
-            console.log(`[BodyScans] Raw PRISM_API_KEY: "${PRISM_API_KEY}"`);
-
-            if (!PRISM_API_KEY) {
-                console.error("[BodyScans] CRITICAL ERROR: PRISM_API_KEY is missing in environment variables.");
-                return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server configuration error: PRISM_API_KEY missing.' }) };
-            }
-
-            const finalApiKey = PRISM_API_KEY.trim();
-
-            // Determine Environment and Base URL
-            // Default to PRODUCTION per user request
-            const isSandbox = (PRISM_ENV || '').trim().toLowerCase() === 'sandbox';
-            const env = isSandbox ? 'sandbox' : 'production';
-            
-            let defaultUrl = "https://api.hosted.prismlabs.tech";
-            if (isSandbox) {
-                defaultUrl = "https://sandbox-api.hosted.prismlabs.tech";
-            }
-
-            const baseUrl = PRISM_API_URL || defaultUrl;
-
-            // Mask key for logging safety
-            const maskedKey = finalApiKey ? `${finalApiKey.substring(0, 4)}...${finalApiKey.substring(finalApiKey.length - 4)}` : 'MISSING';
-            console.log(`[BodyScans] Init Config - Env: ${env}, Url: ${baseUrl}, Key: ${maskedKey}`);
-
-            const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
-
-            // Generate a unique token for the user.
-            const prismUserToken = `user_${userId}`;
-
-            // Standard Headers for Prism v1 API
-            // SWITCHED TO BEARER TOKEN AUTH AS REQUESTED
-            const prismHeaders = {
-                'Authorization': `Bearer ${finalApiKey}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json;v=1'
-            };
-
-            // 1. CHECK IF USER EXISTS
-            // GET /users/{token}
-            let userExists = false;
-            try {
-                console.log(`[BodyScans] Checking if user exists at: ${baseUrl}/users/${prismUserToken}`);
-                const checkUserRes = await fetch(`${baseUrl}/users/${prismUserToken}`, {
-                    method: 'GET',
-                    headers: prismHeaders
-                });
-
-                if (checkUserRes.ok) {
-                    userExists = true;
-                    console.log(`[BodyScans] User ${prismUserToken} already exists.`);
-                } else if (checkUserRes.status !== 404) {
-                    const checkErr = await checkUserRes.text();
-                    console.warn(`[BodyScans] Check user warning (${checkUserRes.status}): ${checkErr}`);
-
-                    if (checkUserRes.status === 401 || checkUserRes.status === 403) {
-                        throw new Error(`Authorization Failed during User Check: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
-                    }
-                }
-            } catch (checkErr) {
-                // Propagate auth errors specifically
-                if (checkErr.message && checkErr.message.includes("Authorization Failed")) {
-                    throw checkErr;
-                }
-                console.warn(`[BodyScans] Failed to check user existence:`, checkErr);
-            }
-
-            // 2. REGISTER NEW USER IF NOT EXISTS
-            // POST /users
-            if (!userExists) {
-                console.log(`[BodyScans] Registering new user at: ${baseUrl}/users`);
-
-                // Use a COMPLETE payload structure satisfying the strict schema
-                const userPayload = {
-                    token: prismUserToken,
-                    email: event.user.email || "user@example.com",
-
-                    // Demographic placeholders (Required by Schema)
-                    weight: { value: 80, unit: 'kg' },
-                    height: { value: 1.8, unit: 'm' },
-                    sex: 'male',
-                    region: 'north_america',
-                    usaResidence: 'California',
-                    birthDate: '1990-01-01',
-
-                    // Consent - MUST BE TRUE per dev feedback
-                    researchConsent: true,
-                    termsOfService: {
-                        accepted: true,
-                        version: "1"
-                    }
-                };
-
-                // --- DEBUG: LOG FULL REQUEST FOR DEVELOPER ---
-                console.log("[BodyScans] DEBUG: Sending User Registration Request");
-                console.log("URL:", `${baseUrl}/users`);
-                console.log("Headers:", JSON.stringify({ ...prismHeaders, 'Authorization': 'Bearer ***MASKED***' }, null, 2));
-                console.log("Body:", JSON.stringify(userPayload, null, 2));
-                // ---------------------------------------------
-
-                const createUserRes = await fetch(`${baseUrl}/users`, {
-                    method: 'POST',
-                    headers: prismHeaders,
-                    body: JSON.stringify(userPayload)
-                });
-
-                if (!createUserRes.ok) {
-                    // If 409 Conflict, it means user was created in a race condition, which is fine to proceed.
-                    if (createUserRes.status !== 409) {
-                        const createErr = await createUserRes.text();
-                        console.error(`[BodyScans] Create User Error: ${createErr}`);
-
-                        if (createUserRes.status === 401 || createUserRes.status === 403) {
-                            throw new Error(`Authorization Failed during User Registration: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
-                        }
-
-                        throw new Error(`Prism User Registration Failed: ${createErr}`);
-                    }
-                }
-            }
-
-            // 3. CREATE SCAN
-            // POST /scans
-            console.log(`[BodyScans] Creating scan at: ${baseUrl}/scans`);
-            const scanRes = await fetch(`${baseUrl}/scans`, {
-                method: 'POST',
-                headers: prismHeaders,
-                body: JSON.stringify({
-                    userToken: prismUserToken,
-                    assetConfigId: assetConfigId
-                })
-            });
-
-            if (!scanRes.ok) {
-                const errorText = await scanRes.text();
-                console.error(`[BodyScans] Prism Create Scan Error (${scanRes.status}): ${errorText}`);
-
-                if (scanRes.status === 401 || scanRes.status === 403) {
-                    throw new Error(`Authorization Failed during Scan Creation: The PRISM_API_KEY appears invalid for the target URL (${baseUrl}).`);
-                }
-
-                throw new Error(`Prism Scan Creation Failed: ${errorText}`);
-            }
-            const scanData = await scanRes.json();
-
-            // Return credentials to frontend
-            return {
-                statusCode: 201,
-                headers,
-                body: JSON.stringify({
-                    scanId: scanData.id || scanData._id,
-                    securityToken: scanData.securityToken,
-                    apiBaseUrl: baseUrl,
-                    assetConfigId: assetConfigId,
-                    mode: env // Return the mode so frontend uses correct visual indicators
-                })
-            };
-
-        } catch (e) {
-            console.error("Prism Initialization Error:", e);
-            return { statusCode: 502, headers, body: JSON.stringify({ error: 'Failed to initialize scan session with provider.', details: e.message }) };
-        }
-    }
-
-    // GET /body-scans (Fetch history)
-    if (method === 'GET') {
-        const scans = await getBodyScans(userId);
-        return { statusCode: 200, headers, body: JSON.stringify(scans) };
-    }
-
-    // POST /body-scans (Process & Save Completed Scan)
-    if (method === 'POST') {
-        const body = JSON.parse(event.body);
-
-        if (body.scanId) {
-            try {
-                const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
-
-                // Determine base URL (same logic as init)
-                const isSandbox = (PRISM_ENV || '').trim().toLowerCase() === 'sandbox';
-                
-                let baseUrl = "https://api.hosted.prismlabs.tech"; // Default to Prod
-                if (isSandbox) {
-                    baseUrl = "https://sandbox-api.hosted.prismlabs.tech";
-                }
-                if (PRISM_API_URL) baseUrl = PRISM_API_URL;
-
-                const finalApiKey = PRISM_API_KEY ? PRISM_API_KEY.trim() : '';
-
-                const fetchPrism = async (endpoint) => {
-                    const res = await fetch(`${baseUrl}${endpoint}`, {
-                        headers: {
-                            'Authorization': `Bearer ${finalApiKey}`,
-                            'Accept': 'application/json;v=1'
-                        }
-                    });
-                    if (res.status === 404) return null; // Not ready or not found
-                    if (!res.ok) throw new Error(`Prism API ${endpoint} Failed: ${res.status}`);
-                    return res.json();
-                };
-
-                // 1. Get Basic Scan Status/Details
-                const scanDetails = await fetchPrism(`/scans/${body.scanId}`);
-
-                // 2. Get Measurements
-                const measurements = await fetchPrism(`/scans/${body.scanId}/measurements`);
-
-                // 3. Get Mass/Body Fat
-                const mass = await fetchPrism(`/scans/${body.scanId}/mass`);
-
-                // Combine all data
-                const enrichedScanData = {
-                    ...scanDetails,
-                    measurements: measurements || {},
-                    composition: mass || {},
-                    userGoal: body.userGoal,
-                    status: scanDetails?.status || 'completed'
-                };
-
-                // 4. Save to Database
-                const newScan = await saveBodyScan(userId, enrichedScanData);
-
-                return { statusCode: 201, headers, body: JSON.stringify(newScan) };
-
-            } catch (e) {
-                console.error("Error fetching/saving Prism data:", e);
-                // Fallback: Save what the frontend sent if server fetch fails
-                const fallbackScan = await saveBodyScan(userId, { ...body, note: "Server fetch failed, raw data only" });
-                return { statusCode: 201, headers, body: JSON.stringify(fallbackScan) };
-            }
-        } else {
-            return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scanId in request.' }) };
-        }
-    }
-
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
-}
-
-// --- HANDLER FOR SHOPIFY WEBHOOKS ---
 async function handleShopifyWebhook(event, secret) {
     try {
         const body = event.body;
         const hmacHeader = event.headers['x-shopify-hmac-sha256'] || event.headers['X-Shopify-Hmac-Sha256'];
-
-        // 1. Verify HMAC
         if (secret) {
             const hash = crypto.createHmac('sha256', secret).update(body).digest('base64');
-            if (hash !== hmacHeader) {
-                console.warn("Shopify Webhook HMAC verification failed.");
-                return { statusCode: 401, body: 'Unauthorized' };
-            }
+            if (hash !== hmacHeader) return { statusCode: 401, body: 'Unauthorized' };
         }
-
-        const order = /** @type {any} */ (JSON.parse(body));
+        const order = JSON.parse(body);
         const email = order.email;
         const customerId = order.customer?.id;
-
         let user = await findOrCreateUserByEmail(email, customerId ? String(customerId) : null);
+        if (!user) return { statusCode: 200, body: 'User processing failed' };
 
-        if (!user) {
-            console.error(`Could not find or create user for email ${email}`);
-            return { statusCode: 200, body: 'User processing failed' };
-        }
-
-        const lineItems = order.line_items || [];
-
-        for (const item of lineItems) {
+        for (const item of (order.line_items || [])) {
             const sku = item.sku;
-
-            // 2. Unlock Medical Dashboard
             if (sku === 'GLP1-MONTHLY') {
-                await grantEntitlement(user.id, {
-                    source: 'shopify_order',
-                    externalProductId: sku,
-                    expiresAt: null // or calculate 30 days from now
-                });
-                console.log(`Granted Medical Dashboard to user ${user.id}`);
+                await grantEntitlement(user.id, { source: 'shopify_order', externalProductId: sku, expiresAt: null });
             }
-
-            // 3. Record Purchase History
             if (sku === 'SUPPLEMENT-X') {
                 await recordPurchase(user.id, String(order.id), sku, item.name);
-                console.log(`Recorded purchase of SUPPLEMENT-X for user ${user.id}`);
             }
         }
-
         return { statusCode: 200, body: 'Webhook processed' };
-
     } catch (e) {
-        console.error("Webhook Error:", e);
         return { statusCode: 500, body: 'Server Error' };
     }
 }
 
-// --- HANDLER FOR SLEEP RECORDS ---
 async function handleSleepRecordsRequest(event, headers, method) {
     const userId = event.user.userId;
     if (method === 'GET') {
@@ -594,16 +266,12 @@ async function handleSleepRecordsRequest(event, headers, method) {
     }
     if (method === 'POST') {
         const sleepData = JSON.parse(event.body);
-        if (!sleepData.durationMinutes || !sleepData.startTime || !sleepData.endTime) {
-            return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing required fields: durationMinutes, startTime, endTime' }) };
-        }
         const record = await saveSleepRecord(userId, sleepData);
         return { statusCode: 201, headers, body: JSON.stringify(record) };
     }
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
 }
 
-// --- HANDLER FOR ENTITLEMENTS ---
 async function handleEntitlementsRequest(event, headers, method) {
     const userId = event.user.userId;
     if (method === 'GET') {
@@ -612,8 +280,6 @@ async function handleEntitlementsRequest(event, headers, method) {
     }
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
 }
-
-// --- EXISTING HANDLERS ---
 
 async function handleGroceryListRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
