@@ -15,15 +15,15 @@ export const handler = async (event) => {
         PRISM_API_URL,
         JWT_SECRET,
         FRONTEND_URL,
-        PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT
+        PGHOST
     } = process.env;
 
     // --- CORS CONFIGURATION ---
+    // Allow specific origins or fallback to Frontend URL
     const allowedOrigins = [
         "https://food.embracehealth.ai",
         "https://app.embracehealth.ai",
         "https://scan.embracehealth.ai",
-        "https://main.dfp0msdoew280.amplifyapp.com",
         "http://localhost:5173",
         "http://localhost:3000",
         FRONTEND_URL
@@ -32,7 +32,7 @@ export const handler = async (event) => {
     const requestHeaders = event.headers || {};
     const origin = requestHeaders.origin || requestHeaders.Origin;
     
-    let accessControlAllowOrigin = FRONTEND_URL || (allowedOrigins.length > 0 ? allowedOrigins[0] : '*');
+    let accessControlAllowOrigin = FRONTEND_URL || '*';
     if (origin && allowedOrigins.includes(origin)) {
         accessControlAllowOrigin = origin;
     }
@@ -44,11 +44,8 @@ export const handler = async (event) => {
     };
 
     // --- BASIC VALIDATION ---
-    const requiredEnvVars = ['PRISM_API_KEY', 'JWT_SECRET', 'PGHOST'];
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-    
-    if (missingVars.length > 0) {
-        console.error(`[ScannerService] Missing Envs: ${missingVars.join(', ')}`);
+    if (!PRISM_API_KEY || !JWT_SECRET || !PGHOST) {
+        console.error("[ScannerService] Missing required environment variables (PRISM_API_KEY, JWT_SECRET, PGHOST).");
         return {
             statusCode: 500,
             headers,
@@ -59,6 +56,8 @@ export const handler = async (event) => {
     // --- REQUEST PARSING ---
     let path;
     let method;
+    
+    // Support Payload v2 (Function URL) and v1 (API Gateway REST)
     if (event.requestContext && event.requestContext.http) {
         path = event.requestContext.http.path;
         method = event.requestContext.http.method;
@@ -75,7 +74,6 @@ export const handler = async (event) => {
     }
 
     // --- AUTHENTICATION ---
-    // We reuse the same JWT_SECRET as the main app to verify the user
     const normalizedHeaders = {};
     if (event.headers) {
         for (const key in event.headers) {
@@ -97,8 +95,9 @@ export const handler = async (event) => {
 
     const userId = event.user.userId;
     const pathParts = path.split('/').filter(Boolean);
-    // Detect if "init" is in the path, regardless of prefix (e.g. /init or /body-scans/init)
-    const isInit = pathParts.includes('init');
+    
+    // Detect "init" action in path
+    const isInit = pathParts.some(p => p === 'init');
 
     try {
         // --- ROUTE: INITIALIZE SCAN (POST .../init) ---
@@ -116,7 +115,10 @@ export const handler = async (event) => {
         if (method === 'POST') {
             let body = {};
             if (event.body) {
-                body = JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body);
+                // Handle Base64 encoding if coming from API Gateway/Lambda Proxy
+                const isBase64 = event.isBase64Encoded;
+                const rawBody = isBase64 ? Buffer.from(event.body, 'base64').toString('utf-8') : event.body;
+                body = JSON.parse(rawBody);
             }
             
             if (!body.scanId) {
@@ -139,20 +141,16 @@ export const handler = async (event) => {
 async function handleInitScan(event, headers, userId) {
     const { PRISM_API_KEY, PRISM_ENV, PRISM_API_URL } = process.env;
 
-    // Parse Body safely
+    // Parse Body
     let requestBody = {};
     try {
         let bodyContent = event.body;
         if (event.isBase64Encoded) {
             bodyContent = Buffer.from(event.body, 'base64').toString('utf-8');
         }
-        if (typeof bodyContent === 'string') {
-            requestBody = JSON.parse(bodyContent);
-        } else if (typeof bodyContent === 'object') {
-            requestBody = bodyContent;
-        }
+        requestBody = typeof bodyContent === 'string' ? JSON.parse(bodyContent) : bodyContent;
     } catch (e) {
-        console.warn("[ScannerService] Body parse error, defaulting config", e);
+        // Ignore parse errors, fallback to defaults
     }
 
     let deviceConfigName = 'ANDROID_SCANNER';
@@ -164,7 +162,7 @@ async function handleInitScan(event, headers, userId) {
     const isSandbox = (PRISM_ENV || '').trim().toLowerCase() === 'sandbox';
     const env = isSandbox ? 'sandbox' : 'production';
     
-    let defaultUrl = "https://api.hosted.prismlabs.tech"; // Default Prod
+    let defaultUrl = "https://api.hosted.prismlabs.tech";
     if (isSandbox) defaultUrl = "https://sandbox-api.hosted.prismlabs.tech";
     
     const baseUrl = PRISM_API_URL || defaultUrl;
@@ -177,14 +175,14 @@ async function handleInitScan(event, headers, userId) {
         'Accept': 'application/json;v=1'
     };
 
-    // 1. Check User
+    // 1. Check if user exists in Prism
     let userExists = false;
     try {
         const checkUserRes = await fetch(`${baseUrl}/users/${prismUserToken}`, { method: 'GET', headers: prismHeaders });
         if (checkUserRes.ok) userExists = true;
     } catch (e) { console.warn("User check failed", e); }
 
-    // 2. Register User
+    // 2. Register User if needed
     if (!userExists) {
         const userPayload = {
             token: prismUserToken,
@@ -201,7 +199,7 @@ async function handleInitScan(event, headers, userId) {
         await fetch(`${baseUrl}/users`, { method: 'POST', headers: prismHeaders, body: JSON.stringify(userPayload) });
     }
 
-    // 3. Create Scan
+    // 3. Create Scan Session
     const scanRes = await fetch(`${baseUrl}/scans`, {
         method: 'POST',
         headers: prismHeaders,
@@ -242,6 +240,7 @@ async function handleSaveScan(body, headers, userId) {
             return res.json();
         };
 
+        // Fetch detailed results from Prism to save in our DB
         const [scanDetails, measurements, mass] = await Promise.all([
             fetchPrism(`/scans/${body.scanId}`),
             fetchPrism(`/scans/${body.scanId}/measurements`),

@@ -1,1 +1,1 @@
-// Deprecated. Logic moved to index.js for standalone service deployment.
+// This file is deprecated. All logic has been moved to index.js.
