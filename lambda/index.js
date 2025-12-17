@@ -24,6 +24,7 @@ export const handler = async (event) => {
         "https://food.embracehealth.ai",
         "https://app.embracehealth.ai",
         "https://scan.embracehealth.ai",
+        "https://main.dfp0msdoew280.amplifyapp.com",
         "http://localhost:5173",
         "http://localhost:3000",
         FRONTEND_URL
@@ -32,7 +33,7 @@ export const handler = async (event) => {
     const requestHeaders = event.headers || {};
     const origin = requestHeaders.origin || requestHeaders.Origin;
     
-    let accessControlAllowOrigin = FRONTEND_URL || '*';
+    let accessControlAllowOrigin = FRONTEND_URL || (allowedOrigins.length > 0 ? allowedOrigins[0] : '*');
     if (origin && allowedOrigins.includes(origin)) {
         accessControlAllowOrigin = origin;
     }
@@ -44,8 +45,9 @@ export const handler = async (event) => {
     };
 
     // --- BASIC VALIDATION ---
-    if (!PRISM_API_KEY || !JWT_SECRET || !PGHOST) {
-        console.error("[ScannerService] Missing required environment variables (PRISM_API_KEY, JWT_SECRET, PGHOST).");
+    // We check for minimal requirements. 
+    if (!JWT_SECRET || !PGHOST) {
+        console.error("[ScannerService] Missing critical env vars (JWT_SECRET, PGHOST).");
         return {
             statusCode: 500,
             headers,
@@ -96,16 +98,20 @@ export const handler = async (event) => {
     const userId = event.user.userId;
     const pathParts = path.split('/').filter(Boolean);
     
-    // Detect "init" action in path
+    // Detect "init" action in path. Matches /init, /default/init, /prod/init etc.
     const isInit = pathParts.some(p => p === 'init');
 
     try {
         // --- ROUTE: INITIALIZE SCAN (POST .../init) ---
         if (method === 'POST' && isInit) {
+            if (!PRISM_API_KEY) {
+                return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server missing PRISM_API_KEY' }) };
+            }
             return await handleInitScan(event, headers, userId);
         }
 
         // --- ROUTE: GET HISTORY (GET /) ---
+        // Matches root path (empty pathParts) or just stage name
         if (method === 'GET') {
             const scans = await getBodyScans(userId);
             return { statusCode: 200, headers, body: JSON.stringify(scans) };
@@ -122,7 +128,14 @@ export const handler = async (event) => {
             }
             
             if (!body.scanId) {
-                return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scanId.' }) };
+                return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scanId in body.' }) };
+            }
+
+            if (!PRISM_API_KEY) {
+                 // Fallback if API key missing: just save what we have without fetching enrichment
+                 console.warn("Missing PRISM_API_KEY, saving raw data only.");
+                 const newScan = await saveBodyScan(userId, body);
+                 return { statusCode: 201, headers, body: JSON.stringify(newScan) };
             }
 
             return await handleSaveScan(body, headers, userId);
@@ -133,7 +146,7 @@ export const handler = async (event) => {
         return { statusCode: 500, headers, body: JSON.stringify({ error: 'Internal Server Error' }) };
     }
 
-    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Not Found' }) };
+    return { statusCode: 404, headers, body: JSON.stringify({ error: `Not Found: ${path}` }) };
 };
 
 // --- LOGIC HELPERS ---
@@ -166,6 +179,7 @@ async function handleInitScan(event, headers, userId) {
     if (isSandbox) defaultUrl = "https://sandbox-api.hosted.prismlabs.tech";
     
     const baseUrl = PRISM_API_URL || defaultUrl;
+    // Standard Asset Config ID for body scanning
     const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718";
     const prismUserToken = `user_${userId}`;
 
@@ -207,7 +221,9 @@ async function handleInitScan(event, headers, userId) {
     });
 
     if (!scanRes.ok) {
-        throw new Error(`Prism Scan Creation Failed: ${await scanRes.text()}`);
+        const errText = await scanRes.text();
+        console.error("Prism Create Scan Failed:", errText);
+        throw new Error(`Prism Scan Creation Failed: ${scanRes.status}`);
     }
     const scanData = await scanRes.json();
 
@@ -260,7 +276,7 @@ async function handleSaveScan(body, headers, userId) {
 
     } catch (e) {
         console.error("Fetch failed, saving raw fallback", e);
-        const fallbackScan = await saveBodyScan(userId, { ...body, note: "Server fetch failed" });
+        const fallbackScan = await saveBodyScan(userId, { ...body, note: "Server fetch failed, saved raw data" });
         return { statusCode: 201, headers, body: JSON.stringify(fallbackScan) };
     }
 }
