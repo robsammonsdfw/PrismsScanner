@@ -1,4 +1,5 @@
 
+
 // This service communicates with the same backend lambda used by the main Food App.
 // We prioritize the environment variable, but keep the hardcoded URL as a fallback for local development if .env is missing.
 const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/default';
@@ -25,29 +26,41 @@ export const initScanSession = async (deviceConfigName?: string) => {
     const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
     const endpoint = `${baseUrl}/init`; 
 
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ deviceConfigName: deviceConfigName || 'ANDROID_SCANNER' })
-    });
+    console.log(`Initializing Scan Session at: ${endpoint}`);
 
-    if (!response.ok) {
-        let errorMessage = 'Failed to initialize scan session via backend.';
-        try {
-            const errorBody = await response.json();
-            if (errorBody.error) {
-                errorMessage = errorBody.error;
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify({ deviceConfigName: deviceConfigName || 'ANDROID_SCANNER' })
+        });
+
+        if (!response.ok) {
+            let errorMessage = `Server Error (${response.status})`;
+            try {
+                const errorBody = await response.json();
+                if (errorBody.error) {
+                    errorMessage = errorBody.error;
+                }
+                if (errorBody.details) {
+                    errorMessage += `: ${errorBody.details}`;
+                }
+            } catch (e) {
+                // If JSON parse fails, it might be a raw 502/500 from AWS or CORS failure
+                console.warn('Could not parse backend error response', e);
             }
-            if (errorBody.details) {
-                errorMessage += `: ${errorBody.details}`;
-            }
-        } catch (e) {
-            console.warn('Could not parse backend error response', e);
+            throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
-    }
 
-    return response.json();
+        return await response.json();
+    } catch (err: any) {
+        console.error("API Call Failed:", err);
+        // Pass through specific messages or default
+        if (err.message && err.message.includes('Failed to fetch')) {
+            throw new Error('Connection failed. Please check your internet or firewall. (CORS/Network)');
+        }
+        throw err;
+    }
 };
 
 export const saveBodyScan = async (data: any) => {
