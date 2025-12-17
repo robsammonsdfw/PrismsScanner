@@ -1,10 +1,6 @@
 
-
-// This service communicates with the same backend lambda used by the main Food App.
-// We prioritize the environment variable, but keep the hardcoded URL as a fallback for local development if .env is missing.
+// This service communicates with the backend lambda for the Scanner application.
 const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || 'https://xmpbc16u1f.execute-api.us-west-1.amazonaws.com/default';
-
-// New: Dedicated scanner microservice URL. Falls back to main API for backwards compatibility if not set.
 const SCANNER_API_URL = import.meta.env.VITE_SCANNER_API_URL || API_BASE_URL;
 
 const AUTH_TOKEN_KEY = 'embracehealth-api-token';
@@ -18,46 +14,42 @@ const getHeaders = () => {
 };
 
 export const initScanSession = async (deviceConfigName?: string) => {
-    // Ensure no double slashes and correct endpoint structure
-    // If SCANNER_API_URL is "https://...lambda-url.../" strip trailing slash
     const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
     const endpoint = `${baseUrl}/init`; 
 
-    console.log(`[Client] Initializing Scan Session at URL: ${endpoint}`);
+    console.log(`[API] Initializing session at: ${endpoint}`);
 
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: getHeaders(),
-            body: JSON.stringify({ deviceConfigName: deviceConfigName || 'ANDROID_SCANNER' })
+            body: JSON.stringify({ 
+                deviceConfigName: deviceConfigName || 'ANDROID_SCANNER',
+                timestamp: new Date().toISOString()
+            })
         });
 
         if (!response.ok) {
+            console.error(`[API] Server responded with status: ${response.status}`);
             let errorMessage = `Server Error (${response.status})`;
             try {
                 const errorBody = await response.json();
-                console.error("[Client] Server Error Details:", errorBody);
-                if (errorBody.error) {
-                    errorMessage = errorBody.error;
-                }
-                if (errorBody.details) {
-                    errorMessage += `: ${errorBody.details}`;
-                }
+                console.error("[API] Error payload:", errorBody);
+                errorMessage = errorBody.error || errorBody.message || errorMessage;
+                if (errorBody.details) errorMessage += `: ${errorBody.details}`;
             } catch (e) {
-                // If JSON parse fails, it usually means 500/502 from AWS infrastructure or CORS block
-                console.warn('[Client] Could not parse backend error response. Raw status:', response.status);
+                console.warn('[API] Could not parse error response JSON');
             }
             throw new Error(errorMessage);
         }
 
         const data = await response.json();
-        console.log("[Client] Init Success:", data);
+        console.log("[API] Session initialized successfully:", data.scanId);
         return data;
     } catch (err: any) {
-        console.error("[Client] API Call Failed:", err);
-        // Pass through specific messages or default
-        if (err.message && err.message.includes('Failed to fetch')) {
-            throw new Error('Connection failed. Please check your internet or firewall. (CORS/Network)');
+        console.error("[API] Fetch execution failed:", err);
+        if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+            throw new Error('Connection failed. This is usually a CORS error or the backend is offline.');
         }
         throw err;
     }
@@ -65,9 +57,9 @@ export const initScanSession = async (deviceConfigName?: string) => {
 
 export const saveBodyScan = async (data: any) => {
   const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
-  const endpoint = `${baseUrl}`; // Root POST for saving
+  const endpoint = baseUrl; 
 
-  console.log(`[Client] Saving scan to: ${endpoint}`);
+  console.log(`[API] Saving scan data to: ${endpoint}`);
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -76,7 +68,9 @@ export const saveBodyScan = async (data: any) => {
   });
   
   if (!response.ok) {
-    throw new Error('Failed to save body scan data');
+    const errText = await response.text();
+    console.error("[API] Save failed:", errText);
+    throw new Error('Failed to save scan results');
   }
   
   return response.json();
@@ -84,7 +78,7 @@ export const saveBodyScan = async (data: any) => {
 
 export const getScanHistory = async () => {
   const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
-  const endpoint = `${baseUrl}`; // Root GET for history
+  const endpoint = baseUrl; 
 
   const response = await fetch(endpoint, {
     method: 'GET',
@@ -99,7 +93,8 @@ export const getScanHistory = async () => {
 };
 
 export const checkAuthToken = (): boolean => {
-    return !!localStorage.getItem(AUTH_TOKEN_KEY);
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    return !!token && token.length > 10; // Basic validity check
 };
 
 export const setAuthToken = (token: string) => {
