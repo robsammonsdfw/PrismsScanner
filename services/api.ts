@@ -18,15 +18,12 @@ const getHeaders = () => {
 };
 
 export const initScanSession = async (deviceConfigName?: string) => {
-    // Note: If using separate lambda, the path might be just "/init" depending on API Gateway mapping
-    // We assume the URL includes the stage but not the specific resource if it's a microservice root
-    // For safety, we append /init to the base Scanner URL.
-    
-    // Check if the URL already ends in a slash to avoid double slash
+    // Ensure no double slashes and correct endpoint structure
+    // If SCANNER_API_URL is "https://...lambda-url.../" strip trailing slash
     const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
     const endpoint = `${baseUrl}/init`; 
 
-    console.log(`Initializing Scan Session at: ${endpoint}`);
+    console.log(`[Client] Initializing Scan Session at URL: ${endpoint}`);
 
     try {
         const response = await fetch(endpoint, {
@@ -39,6 +36,7 @@ export const initScanSession = async (deviceConfigName?: string) => {
             let errorMessage = `Server Error (${response.status})`;
             try {
                 const errorBody = await response.json();
+                console.error("[Client] Server Error Details:", errorBody);
                 if (errorBody.error) {
                     errorMessage = errorBody.error;
                 }
@@ -46,15 +44,17 @@ export const initScanSession = async (deviceConfigName?: string) => {
                     errorMessage += `: ${errorBody.details}`;
                 }
             } catch (e) {
-                // If JSON parse fails, it might be a raw 502/500 from AWS or CORS failure
-                console.warn('Could not parse backend error response', e);
+                // If JSON parse fails, it usually means 500/502 from AWS infrastructure or CORS block
+                console.warn('[Client] Could not parse backend error response. Raw status:', response.status);
             }
             throw new Error(errorMessage);
         }
 
-        return await response.json();
+        const data = await response.json();
+        console.log("[Client] Init Success:", data);
+        return data;
     } catch (err: any) {
-        console.error("API Call Failed:", err);
+        console.error("[Client] API Call Failed:", err);
         // Pass through specific messages or default
         if (err.message && err.message.includes('Failed to fetch')) {
             throw new Error('Connection failed. Please check your internet or firewall. (CORS/Network)');
@@ -66,6 +66,8 @@ export const initScanSession = async (deviceConfigName?: string) => {
 export const saveBodyScan = async (data: any) => {
   const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
   const endpoint = `${baseUrl}`; // Root POST for saving
+
+  console.log(`[Client] Saving scan to: ${endpoint}`);
 
   const response = await fetch(endpoint, {
     method: 'POST',
