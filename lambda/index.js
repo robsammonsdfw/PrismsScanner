@@ -150,14 +150,13 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             'Authorization': `Bearer ${apiKey.trim()}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json;v=1',
-            'User-Agent': 'EmbraceHealth-Scanner/1.4'
+            'User-Agent': 'EmbraceHealth-Scanner/1.5'
         }
     };
 
     try {
-        console.log(`[Prism] Initializing User: ${prismUserToken}`);
+        console.log(`[Prism] Initializing User Flow: ${prismUserToken}`);
         
-        // FIX: Added 'region' and removed forbidden 'acceptedAt' from termsOfService
         const userPayload = {
             token: prismUserToken,
             email: userEmail || 'user@example.com',
@@ -174,14 +173,30 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
         };
 
         // 1. Create/Verify User
-        const userRes = await prismRequest({
+        let userRes = await prismRequest({
             ...defaultRequestOptions,
             method: 'POST',
             path: '/users'
         }, userPayload);
 
-        // 409 means user already exists, which is fine
-        if (userRes.status !== 409 && !userRes.ok) {
+        let securityToken = null;
+
+        if (userRes.status === 409) {
+            console.log(`[Prism] User ${prismUserToken} already exists, fetching existing token...`);
+            // Fetch existing user to get their token
+            const fetchRes = await prismRequest({
+                ...defaultRequestOptions,
+                method: 'GET',
+                path: `/users/${prismUserToken}`
+            });
+            if (fetchRes.ok) {
+                securityToken = fetchRes.data.token || fetchRes.data.securityToken;
+            } else {
+                console.error("[Prism] Failed to fetch existing user:", fetchRes.data);
+            }
+        } else if (userRes.ok) {
+            securityToken = userRes.data.token || userRes.data.securityToken;
+        } else {
             console.error("[Prism] User Provisioning Failed:", userRes.data);
             return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism User Setup Failed", details: userRes.data }) };
         }
@@ -206,26 +221,32 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session Failed", details: scanRes.data }) };
         }
 
-        const securityToken = scanRes.data.token || scanRes.data.securityToken || scanRes.data.clientToken;
+        // Token might be in scanRes, but if not, use the one from userRes
+        const finalToken = scanRes.data.token || scanRes.data.securityToken || scanRes.data.clientToken || securityToken;
 
-        if (!securityToken) {
-            console.error("[Prism] Response missing security token:", scanRes.data);
+        if (!finalToken) {
+            console.error("[Prism] CRITICAL: No security token found in User or Scan response.", {
+                userRes: userRes.data,
+                scanRes: scanRes.data
+            });
             return { 
                 statusCode: 502, 
                 headers, 
                 body: JSON.stringify({ 
-                    error: "No security token returned", 
-                    details: scanRes.data 
+                    error: "No security token returned by Prism API", 
+                    details: { scanResponse: scanRes.data }
                 }) 
             };
         }
+
+        console.log(`[Prism] Success. Scan ID: ${scanRes.data.id}, Token Source: ${scanRes.data.token ? 'Scan' : 'User'}`);
 
         return {
             statusCode: 201,
             headers,
             body: JSON.stringify({
                 scanId: scanRes.data.id || scanRes.data._id,
-                securityToken: securityToken,
+                securityToken: finalToken,
                 apiBaseUrl: baseUrl,
                 assetConfigId: assetConfigId,
                 mode: isSandbox ? 'sandbox' : 'production'
