@@ -21,7 +21,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [retryCount, setRetryCount] = useState<number>(0);
 
   const startSession = async () => {
-    console.log("[Scanner] --- Starting Session Flow ---");
+    console.log("[Scanner] Starting Session...");
     setIsLoading(true);
     setError(null);
     setIsAuthError(false);
@@ -31,25 +31,25 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       const getDeviceConfig = (): string => {
         const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera || '';
         if (/iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream) return 'IPHONE_SCANNER';
-        if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return 'IPHONE_SCANNER';
         return 'ANDROID_SCANNER';
       };
 
       const deviceConfigName = getDeviceConfig();
-      console.log(`[Scanner] Device identified as: ${deviceConfigName}`);
-      
       const sessionData = await initScanSession(deviceConfigName);
-      console.log("[Scanner] Backend API response received:", sessionData);
+      
+      console.log("[Scanner] Session initialized successfully:", sessionData);
 
       const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
       
+      // Verification
       if (!scanId || !securityToken) {
-          throw new Error("Invalid session data: Missing scanId or securityToken");
+          console.error("[Scanner] Data check failed:", { scanId: !!scanId, token: !!securityToken });
+          throw new Error("Missing secure credentials from server.");
       }
 
       waitForSDK(scanId, securityToken, apiBaseUrl, assetConfigId, mode);
     } catch (err: any) {
-      console.error("[Scanner] startSession failed:", err);
+      console.error("[Scanner] startSession error:", err);
       setIsLoading(false);
       
       const errorMessage = err.message || "Unknown error";
@@ -71,28 +71,27 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   const renderSDK = (prism: any, config: PrismConfig) => {
     if (initializedRef.current) return;
-    console.log("[Scanner] Rendering Prism SDK with config:", config);
+    console.log("[Scanner] Invoking prism.render...");
     
     try {
         prism.render(config);
         initializedRef.current = true;
         setIsLoading(false);
-        console.log("[Scanner] Render call executed successfully.");
+        console.log("[Scanner] Prism UI mounted.");
     } catch (err: any) {
-        console.error("[Scanner] Render exception:", err);
-        setError(`Failed to initialize camera view: ${err.message}`);
+        console.error("[Scanner] Rendering error:", err);
+        setError(`Failed to mount scanner: ${err.message}`);
         setIsLoading(false);
     }
   };
 
-  const waitForSDK = (scanId: string, token: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
+  const waitForSDK = (scanId: string, securityToken: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
     setStatusMessage("Launching Scanner UI...");
-    console.log("[Scanner] waitForSDK: Setting up event listeners and fallback.");
 
     const config: PrismConfig & { [key: string]: any } = {
         apiKey: "token_based_auth", 
         scanId, 
-        token, 
+        token: securityToken, // Map internal securityToken to the 'token' field the SDK expects
         mode, 
         apiBaseUrl,
         apiUrl: apiBaseUrl,
@@ -103,72 +102,47 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             leveling: { title: "Hold phone vertically" },
         },
         onSuccess: (data: any) => {
-            console.log('[Scanner] SDK success callback:', data);
+            console.log('[Scanner] Success:', data);
             onComplete(data);
         },
         onFailure: (err: any) => {
-            console.error('[Scanner] SDK failure callback:', err);
-            setError(`Scanning process failed: ${err.message || 'Check camera permissions'}`);
+            console.error('[Scanner] SDK Error:', err);
+            setError(`Scanner error: ${err.message || 'Check camera permissions'}`);
         },
         onClose: () => onClose()
     };
 
-    // 1. Immediate Check: Is Prism already on the window?
     const existingPrism = (window as any).Prism;
     if (existingPrism) {
-        console.log("[Scanner] Prism found immediately on window. Rendering now.");
         renderSDK(existingPrism, config);
         return;
     }
 
-    // 2. Event-based Check
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
-        console.log("[Scanner] onPrismLoaded event received.");
         const prism = event.detail.prism;
         renderSDK(prism, config);
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // 3. Fallback: If event doesn't fire after 3 seconds, try searching window again
+    // Safety check
     setTimeout(() => {
         if (!initializedRef.current && !error) {
-            console.warn("[Scanner] Event onPrismLoaded did not fire. Checking window again.");
             const fallbackPrism = (window as any).Prism;
             if (fallbackPrism) {
-                console.log("[Scanner] Prism found via fallback window check.");
                 renderSDK(fallbackPrism, config);
-            } else {
-                console.error("[Scanner] SDK not found on window or via event.");
-                setStatusMessage("Struggling to load SDK components...");
             }
         }
     }, 3000);
-
-    // 4. Critical Timeout
-    setTimeout(() => {
-        if (!initializedRef.current && !error) {
-            console.error("[Scanner] Hard timeout reached (12s). SDK failed to signal readiness.");
-            setError("The scanner components failed to load. Please refresh the page.");
-            setIsLoading(false);
-        }
-    }, 12000);
   };
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     startSession();
-    return () => { 
-        document.body.style.overflow = ''; 
-        // Cleanup listener if component unmounts
-        // window.removeEventListener('onPrismLoaded', ...);
-    };
+    return () => { document.body.style.overflow = ''; };
   }, [retryCount]);
 
-  const handleRetry = () => {
-    console.log("[Scanner] User initiated retry.");
-    setRetryCount(prev => prev + 1);
-  };
+  const handleRetry = () => setRetryCount(prev => prev + 1);
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans">
@@ -190,34 +164,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           <div className="bg-red-500/10 p-6 rounded-full mb-8">
             {isAuthError ? <LogOut className="w-12 h-12 text-red-500" /> : <AlertTriangle className="w-12 h-12 text-amber-500" />}
           </div>
-          
-          <div className="mb-10">
-            {typeof error === 'string' ? <p className="text-xl font-bold mb-2">{error}</p> : error}
-          </div>
-
+          <div className="mb-10">{error}</div>
           <div className="flex flex-col gap-4 w-full max-w-xs">
             {isAuthError ? (
-              <button 
-                  onClick={() => window.location.href = 'https://main.embracehealth.ai'} 
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold transition-all shadow-lg"
-              >
-                  Log In Again
-              </button>
+              <button onClick={() => window.location.href = 'https://main.embracehealth.ai'} className="w-full py-4 bg-emerald-600 rounded-xl font-bold">Log In Again</button>
             ) : (
               <>
-                <button 
-                  onClick={handleRetry} 
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg"
-                >
-                  <RefreshCcw className="w-5 h-5" />
-                  Try Again
+                <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2">
+                  <RefreshCcw className="w-5 h-5" /> Try Again
                 </button>
-                <button 
-                  onClick={onClose} 
-                  className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-semibold transition-all"
-                >
-                  Return to Home
-                </button>
+                <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold">Return to Home</button>
               </>
             )}
           </div>
