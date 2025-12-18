@@ -23,7 +23,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [retryCount, setRetryCount] = useState<number>(0);
 
   const startSession = async () => {
-    console.log("[Scanner] Starting Session Flow ---");
+    console.log("[Scanner] Phase 1: Requesting session from backend...");
     setIsLoading(true);
     setIsReadyToStart(false);
     setError(null);
@@ -39,6 +39,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       const deviceConfigName = getDeviceConfig();
       const sessionData = await initScanSession(deviceConfigName);
       
+      console.log("[Scanner] Phase 1 Success: Session received", sessionData.scanId);
+      
       if (!sessionData.scanId || !sessionData.securityToken) {
           throw new Error("Invalid session data: Missing scanId or token");
       }
@@ -47,7 +49,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       setIsReadyToStart(true);
       setIsLoading(false);
     } catch (err: any) {
-      console.error("[Scanner] startSession failed:", err);
+      console.error("[Scanner] Phase 1 Error:", err);
       setIsLoading(false);
       setError(
           <div className="text-center w-full max-w-sm px-6">
@@ -60,12 +62,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   };
 
   const handleStartScanner = () => {
+    console.log("[Scanner] Phase 2: User clicked 'Initialize Scanner'");
     if (!sessionInfo) return;
     setIsLoading(true);
     setStatusMessage("Starting camera system...");
     
-    // We proceed directly to Prism Render. 
-    // Manual getUserMedia is removed as it can lock the hardware on some mobile browsers.
     waitForSDK(
         sessionInfo.scanId, 
         sessionInfo.securityToken, 
@@ -78,26 +79,53 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const renderSDK = (prism: any, config: PrismConfig) => {
     if (initializedRef.current || !containerRef.current) return;
     
-    console.log("[Scanner] Executing Prism.render...");
+    console.log("[Scanner] Phase 4: Found SDK! Attempting render...");
+    console.log("[Scanner] Target Container:", containerRef.current);
+    console.log("[Scanner] Render Config:", { ...config, token: "REDACTED" });
 
     try {
+        if (typeof prism.render !== 'function') {
+            throw new Error("SDK found but 'render' is not a function. Check console for SDK object structure.");
+        }
+
         prism.render({
             ...config,
             container: containerRef.current
         });
-        initializedRef.current = true;
         
-        // Clear our loading state immediately so the Prism UI can be seen/touched
+        initializedRef.current = true;
+        console.log("[Scanner] Phase 5: render() called successfully.");
+        
+        // Clear loading overlay
         setIsLoading(false);
         setStatusMessage("");
     } catch (err: any) {
-        console.error("[Scanner] Prism.render exception:", err);
+        console.error("[Scanner] Phase 4 Render Exception:", err);
         setError(`Failed to mount scanner: ${err.message}`);
         setIsLoading(false);
     }
   };
 
+  const findPrismInstance = () => {
+    // Extensive check of common export patterns
+    const fromWindow = (window as any).Prism;
+    const fromModuleProp = (PrismModule as any).Prism;
+    const fromModuleDefault = (PrismModule as any).default;
+    const fromModuleDefaultPrism = (PrismModule as any).default?.Prism;
+
+    console.log("[Scanner] SDK Discovery Check:", {
+        windowPrism: !!fromWindow,
+        modulePrism: !!fromModuleProp,
+        moduleDefault: !!fromModuleDefault,
+        moduleDefaultPrism: !!fromModuleDefaultPrism
+    });
+
+    return fromWindow || fromModuleProp || fromModuleDefaultPrism || fromModuleDefault;
+  };
+
   const waitForSDK = (scanId: string, securityToken: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
+    console.log("[Scanner] Phase 3: Waiting for SDK to be available in memory...");
+    
     const config: PrismConfig = {
         apiKey: "token_based_auth", 
         scanId, 
@@ -106,52 +134,72 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         apiBaseUrl,
         assetConfigId,
         onSuccess: (data: any) => {
-            console.log("[Scanner] Success:", data);
+            console.log("[Scanner] SDK Callback: onSuccess", data);
             onComplete(data);
         },
         onFailure: (err: any) => {
-            console.error('[Scanner] Failure:', err);
+            console.error('[Scanner] SDK Callback: onFailure', err);
             setError(
                 <div className="text-center px-6">
                     <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
                     <p className="font-bold text-white mb-2">Scanner Error</p>
-                    <p className="text-sm text-zinc-400">{err.message || "Ensure you are in a well-lit area and allowed camera access."}</p>
+                    <p className="text-sm text-zinc-400">{err.message || "Ensure camera permissions are granted and you are in a well-lit area."}</p>
                 </div>
             );
             setIsLoading(false);
         },
-        onClose: () => onClose()
+        onClose: () => {
+            console.log("[Scanner] SDK Callback: onClose");
+            onClose();
+        }
     };
 
-    // Try finding Prism from various possible locations (Module export or Window global)
-    const prism = (window as any).Prism || (PrismModule as any).Prism || (PrismModule as any).default?.Prism;
-
-    if (prism) {
+    // Immediate check
+    const prism = findPrismInstance();
+    if (prism && typeof prism.render === 'function') {
         renderSDK(prism, config);
         return;
     }
 
-    // Listener for late-loading script
+    // Listener for the custom event defined in SDK docs
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
+        console.log("[Scanner] Event 'onPrismLoaded' received!");
         const p = event.detail.prism;
         renderSDK(p, config);
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // Final safety interval
+    // Safety interval to catch it if event is missed
+    let attempts = 0;
     const checkInterval = setInterval(() => {
-        const p = (window as any).Prism || (PrismModule as any).Prism;
-        if (p && !initializedRef.current) {
+        attempts++;
+        const p = findPrismInstance();
+        
+        if (p && typeof p.render === 'function') {
+            console.log(`[Scanner] SDK found via interval after ${attempts} checks.`);
             renderSDK(p, config);
             clearInterval(checkInterval);
+        } else if (attempts % 5 === 0) {
+            console.log(`[Scanner] Still waiting... attempt ${attempts}`);
         }
     }, 500);
 
+    // Timeout
     setTimeout(() => {
         clearInterval(checkInterval);
+        window.removeEventListener('onPrismLoaded', handlePrismLoaded);
+        
         if (!initializedRef.current) {
-            setError("The scanning engine took too long to load. Please refresh.");
+            console.error("[Scanner] Timeout: SDK not found or missing .render method.");
+            const p = findPrismInstance();
+            const detail = p ? `Found object keys: ${Object.keys(p).join(', ')}` : "No object found.";
+            setError(
+                <div className="space-y-4">
+                    <p>The scanning engine took too long to load.</p>
+                    <p className="text-[10px] text-zinc-500 font-mono bg-black/30 p-2 rounded">{detail}</p>
+                </div>
+            );
             setIsLoading(false);
         }
     }, 15000);
@@ -170,14 +218,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans overflow-hidden">
-      {/* Container for Prism SDK - Needs to be visible for initialization */}
       <div 
         ref={containerRef} 
         id="prism-container"
         className="absolute inset-0 w-full h-full bg-black z-10" 
       />
 
-      {/* Manual Start Gesture Screen */}
       {isReadyToStart && !isLoading && !error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[40] p-8 text-center animate-in fade-in duration-300">
             <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 border border-emerald-500/20">
@@ -185,11 +231,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             </div>
             <h2 className="text-2xl font-bold mb-3">Ready to Scan</h2>
             <p className="text-zinc-400 text-sm mb-10 max-w-xs">
-                Camera access granted. Click below to initialize the 3D scanning interface.
+                Session created. Click below to launch the 3D scanning interface.
             </p>
             <button 
                 onClick={handleStartScanner}
-                className="w-full max-w-xs py-5 bg-emerald-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-3 active:scale-[0.98]"
+                className="w-full max-w-xs py-5 bg-emerald-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-3 active:scale-[0.98] transition-transform"
             >
                 <Play className="w-6 h-6 fill-current" />
                 Initialize Scanner
@@ -200,19 +246,17 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         </div>
       )}
 
-      {/* Loading Overlay */}
       {isLoading && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 z-[50] backdrop-blur-sm pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 z-[50] backdrop-blur-sm pointer-events-none transition-opacity duration-300">
           <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-6" />
           <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
         </div>
       )}
 
-      {/* Error Overlay */}
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] p-8 text-center">
-          <div className="mb-10 w-full flex justify-center">{error}</div>
-          <div className="flex flex-col gap-4 w-full max-w-xs">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] p-8 text-center overflow-y-auto">
+          <div className="mb-10 w-full flex justify-center text-white">{error}</div>
+          <div className="flex flex-col gap-4 w-full max-w-xs shrink-0">
             <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform">
                 <RefreshCcw className="w-5 h-5" /> Try Again
             </button>
