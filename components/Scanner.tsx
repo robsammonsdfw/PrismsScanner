@@ -4,7 +4,7 @@ import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { initScanSession } from '../services/api';
-import { Loader2, AlertTriangle, LogOut, RefreshCcw, WifiOff } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCcw, WifiOff, Camera } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -49,41 +49,15 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       setIsLoading(false);
       
       const errorMessage = err.message || "Connection failed";
-      const isTimeout = errorMessage.toLowerCase().includes('time') || errorMessage.toLowerCase().includes('reach');
-      
       if (errorMessage.toLowerCase().includes('expired') || errorMessage.includes('401')) {
           setIsAuthError(true);
           setError("Your session has expired. Please log in again.");
       } else {
           setError(
               <div className="text-center w-full max-w-sm">
-                  {isTimeout ? (
-                      <WifiOff className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-                  ) : (
-                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                  )}
-                  <p className="font-bold text-slate-100 mb-2 text-xl">
-                    {isTimeout ? "Network Timeout" : "Initialization Failed"}
-                  </p>
-                  <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
-                    {errorMessage}
-                  </p>
-                  
-                  {isTimeout && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl text-left mb-6">
-                        <p className="text-[10px] uppercase font-bold text-emerald-400 mb-1 tracking-wider">Infrastructure Tip</p>
-                        <p className="text-xs text-emerald-100/70">
-                            Check your <strong>AWS Lambda Configuration</strong>. If it is inside a <strong>VPC</strong>, ensure it has a <strong>NAT Gateway</strong> to reach the internet.
-                        </p>
-                      </div>
-                  )}
-
-                  {err.details && (
-                      <div className="bg-black/60 p-4 rounded-xl text-[10px] text-left overflow-auto max-h-40 font-mono text-zinc-500 border border-white/5">
-                          <p className="mb-2 text-zinc-400 border-b border-white/10 pb-1 italic uppercase">Technical Details:</p>
-                          {JSON.stringify(err.details, null, 2)}
-                      </div>
-                  )}
+                  <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                  <p className="font-bold text-slate-100 mb-2 text-xl">Initialization Failed</p>
+                  <p className="text-sm text-zinc-400 mb-6 leading-relaxed">{errorMessage}</p>
               </div>
           );
       }
@@ -91,11 +65,22 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   };
 
   const renderSDK = (prism: any, config: PrismConfig) => {
-    if (initializedRef.current) return;
+    if (initializedRef.current || !containerRef.current) return;
+    
+    console.log("[Scanner] Executing Prism.render with config:", {
+        scanId: config.scanId,
+        mode: config.mode,
+        assetConfigId: config.assetConfigId
+    });
+
     try {
-        prism.render(config);
+        prism.render({
+            ...config,
+            container: containerRef.current
+        });
         initializedRef.current = true;
-        setIsLoading(false);
+        // Keep loading true for a moment while the SDK actually starts the camera
+        setTimeout(() => setIsLoading(false), 1500);
     } catch (err: any) {
         console.error("[Scanner] Prism.render failed:", err);
         setError(`Render Error: ${err.message}`);
@@ -106,24 +91,22 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const waitForSDK = (scanId: string, securityToken: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
     setStatusMessage("Preparing camera view...");
 
-    const config: PrismConfig & { [key: string]: any } = {
+    const config: PrismConfig = {
         apiKey: "token_based_auth", 
         scanId, 
         token: securityToken,
         mode, 
         apiBaseUrl,
-        apiUrl: apiBaseUrl,
-        baseUrl: apiBaseUrl,
-        assetConfigId,
-        container: containerRef.current as HTMLElement,
+        assetConfigId, // CRITICAL: This was missing in some previous logic
         translationOverrides: {
             leveling: { title: "Hold phone vertically" },
         },
         onSuccess: (data: any) => {
+            console.log("[Scanner] Success Callback:", data);
             onComplete(data);
         },
         onFailure: (err: any) => {
-            console.error('[Scanner] onFailure:', err);
+            console.error('[Scanner] onFailure Callback:', err);
             setError(`Scanner failed: ${err.message || 'Permissions denied'}`);
         },
         onClose: () => onClose()
@@ -142,36 +125,64 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    setTimeout(() => {
-        if (!initializedRef.current && !error) {
-            const fallbackPrism = (window as any).Prism;
-            if (fallbackPrism) {
-                renderSDK(fallbackPrism, config);
-            }
+    // Fallback if event is missed
+    const checkInterval = setInterval(() => {
+        const prism = (window as any).Prism;
+        if (prism && !initializedRef.current) {
+            renderSDK(prism, config);
+            clearInterval(checkInterval);
         }
-    }, 3000);
+    }, 500);
+
+    // Timeout after 10 seconds
+    setTimeout(() => clearInterval(checkInterval), 10000);
   };
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     startSession();
-    return () => { document.body.style.overflow = ''; };
+    return () => { 
+        document.body.style.overflow = '';
+        window.removeEventListener('onPrismLoaded', () => {});
+    };
   }, [retryCount]);
 
-  const handleRetry = () => setRetryCount(prev => prev + 1);
+  const handleRetry = () => {
+      initializedRef.current = false;
+      setRetryCount(prev => prev + 1);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans">
-      <div ref={containerRef} className="absolute inset-0 w-full h-full bg-black" />
+    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans overflow-hidden">
+      {/* Container for Prism SDK */}
+      <div 
+        ref={containerRef} 
+        id="prism-container"
+        className="absolute inset-0 w-full h-full bg-black z-10" 
+      />
 
-      {isLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 z-[60] backdrop-blur-sm">
-          <div className="relative mb-6">
-            <div className="absolute inset-0 bg-emerald-500/20 blur-xl rounded-full animate-pulse"></div>
-            <Loader2 className="w-14 h-14 text-emerald-500 animate-spin relative z-10" />
+      {isLoading && !error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] backdrop-blur-md">
+          <div className="relative mb-8">
+            <div className="absolute inset-0 bg-emerald-500/20 blur-2xl rounded-full animate-pulse"></div>
+            <Loader2 className="w-16 h-16 text-emerald-500 animate-spin relative z-10" />
           </div>
-          <p className="text-emerald-400 font-bold tracking-widest uppercase text-xs mb-2 animate-pulse">Connecting</p>
-          <p className="text-zinc-400 text-sm font-medium">{statusMessage}</p>
+          
+          <div className="text-center space-y-3 px-6 max-w-xs">
+            <p className="text-emerald-400 font-bold tracking-widest uppercase text-xs animate-pulse">
+                System Handshake
+            </p>
+            <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
+            
+            <div className="pt-8 flex flex-col items-center gap-2 opacity-60">
+                <div className="p-3 bg-white/5 rounded-full">
+                    <Camera className="w-5 h-5 text-emerald-400" />
+                </div>
+                <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">
+                    Allow camera access when prompted
+                </p>
+            </div>
+          </div>
         </div>
       )}
 
