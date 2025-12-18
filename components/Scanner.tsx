@@ -21,7 +21,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [retryCount, setRetryCount] = useState<number>(0);
 
   const startSession = async () => {
-    console.log("[Scanner] Starting Session...");
+    console.log("[Scanner] Starting Session Flow ---");
     setIsLoading(true);
     setError(null);
     setIsAuthError(false);
@@ -37,22 +37,21 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       const deviceConfigName = getDeviceConfig();
       const sessionData = await initScanSession(deviceConfigName);
       
-      console.log("[Scanner] Session initialized successfully:", sessionData);
+      console.log("[Scanner] Backend API response received:", sessionData);
 
       const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
       
-      // Verification
       if (!scanId || !securityToken) {
-          console.error("[Scanner] Data check failed:", { scanId: !!scanId, token: !!securityToken });
-          throw new Error("Missing secure credentials from server.");
+          throw new Error("Invalid session data: Missing scanId or securityToken");
       }
 
       waitForSDK(scanId, securityToken, apiBaseUrl, assetConfigId, mode);
     } catch (err: any) {
-      console.error("[Scanner] startSession error:", err);
+      console.error("[Scanner] startSession failed:", err);
       setIsLoading(false);
       
-      const errorMessage = err.message || "Unknown error";
+      const errorMessage = err.message || "Connection failed";
+      
       if (errorMessage.toLowerCase().includes('expired') || errorMessage.includes('401')) {
           setIsAuthError(true);
           setError("Your session has expired. Please log in again.");
@@ -63,6 +62,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
                   <p className="text-sm opacity-80 mb-4 max-w-xs mx-auto">
                     {errorMessage}
                   </p>
+                  {err.details && (
+                      <div className="bg-black/40 p-3 rounded-lg text-[10px] text-left overflow-auto max-h-32 font-mono text-zinc-400">
+                          {JSON.stringify(err.details, null, 2)}
+                      </div>
+                  )}
               </div>
           );
       }
@@ -71,27 +75,26 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   const renderSDK = (prism: any, config: PrismConfig) => {
     if (initializedRef.current) return;
-    console.log("[Scanner] Invoking prism.render...");
+    console.log("[Scanner] Executing prism.render(config)");
     
     try {
         prism.render(config);
         initializedRef.current = true;
         setIsLoading(false);
-        console.log("[Scanner] Prism UI mounted.");
     } catch (err: any) {
-        console.error("[Scanner] Rendering error:", err);
-        setError(`Failed to mount scanner: ${err.message}`);
+        console.error("[Scanner] Prism.render failed:", err);
+        setError(`Render Error: ${err.message}`);
         setIsLoading(false);
     }
   };
 
   const waitForSDK = (scanId: string, securityToken: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
-    setStatusMessage("Launching Scanner UI...");
+    setStatusMessage("Preparing camera view...");
 
     const config: PrismConfig & { [key: string]: any } = {
         apiKey: "token_based_auth", 
         scanId, 
-        token: securityToken, // Map internal securityToken to the 'token' field the SDK expects
+        token: securityToken,
         mode, 
         apiBaseUrl,
         apiUrl: apiBaseUrl,
@@ -102,38 +105,41 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             leveling: { title: "Hold phone vertically" },
         },
         onSuccess: (data: any) => {
-            console.log('[Scanner] Success:', data);
+            console.log('[Scanner] onSuccess:', data);
             onComplete(data);
         },
         onFailure: (err: any) => {
-            console.error('[Scanner] SDK Error:', err);
-            setError(`Scanner error: ${err.message || 'Check camera permissions'}`);
+            console.error('[Scanner] onFailure:', err);
+            setError(`Scanner failed: ${err.message || 'Permissions denied'}`);
         },
         onClose: () => onClose()
     };
 
     const existingPrism = (window as any).Prism;
     if (existingPrism) {
+        console.log("[Scanner] Prism already on window, rendering...");
         renderSDK(existingPrism, config);
         return;
     }
 
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
+        console.log("[Scanner] Event onPrismLoaded received");
         const prism = event.detail.prism;
         renderSDK(prism, config);
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // Safety check
+    // Safety fallback
     setTimeout(() => {
         if (!initializedRef.current && !error) {
             const fallbackPrism = (window as any).Prism;
             if (fallbackPrism) {
+                console.log("[Scanner] Fallback: Found Prism on window after delay");
                 renderSDK(fallbackPrism, config);
             }
         }
-    }, 3000);
+    }, 2000);
   };
 
   useEffect(() => {
@@ -154,18 +160,18 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             <div className="absolute inset-0 bg-emerald-500/20 blur-xl rounded-full animate-pulse"></div>
             <Loader2 className="w-14 h-14 text-emerald-500 animate-spin relative z-10" />
           </div>
-          <p className="text-emerald-400 font-bold tracking-widest uppercase text-xs mb-2 animate-pulse">Initializing</p>
+          <p className="text-emerald-400 font-bold tracking-widest uppercase text-xs mb-2 animate-pulse">Connecting</p>
           <p className="text-zinc-400 text-sm font-medium">{statusMessage}</p>
         </div>
       )}
 
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[70] p-8 text-center">
-          <div className="bg-red-500/10 p-6 rounded-full mb-8">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[70] p-8 text-center overflow-y-auto">
+          <div className="bg-red-500/10 p-6 rounded-full mb-8 shrink-0">
             {isAuthError ? <LogOut className="w-12 h-12 text-red-500" /> : <AlertTriangle className="w-12 h-12 text-amber-500" />}
           </div>
-          <div className="mb-10">{error}</div>
-          <div className="flex flex-col gap-4 w-full max-w-xs">
+          <div className="mb-10 w-full">{error}</div>
+          <div className="flex flex-col gap-4 w-full max-w-xs shrink-0">
             {isAuthError ? (
               <button onClick={() => window.location.href = 'https://main.embracehealth.ai'} className="w-full py-4 bg-emerald-600 rounded-xl font-bold">Log In Again</button>
             ) : (

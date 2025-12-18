@@ -8,6 +8,39 @@ import {
 } from './services/databaseService.mjs';
 import { Buffer } from 'buffer';
 
+// Helper for HTTPS requests since fetch is timing out in the Lambda environment
+async function prismRequest(options, postData = null) {
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    const parsed = data ? JSON.parse(data) : {};
+                    resolve({
+                        ok: res.statusCode >= 200 && res.statusCode < 300,
+                        status: res.statusCode,
+                        data: parsed
+                    });
+                } catch (e) {
+                    resolve({ ok: false, status: res.statusCode, data: { error: 'Parse Error', raw: data } });
+                }
+            });
+        });
+
+        req.on('error', (e) => reject(e));
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Connection timed out'));
+        });
+
+        if (postData) {
+            req.write(JSON.stringify(postData));
+        }
+        req.end();
+    });
+}
+
 export const handler = async (event) => {
     const requestHeaders = event.headers || {};
     const origin = requestHeaders.origin || requestHeaders.Origin || "*";
@@ -83,95 +116,105 @@ export const handler = async (event) => {
 
 async function handleInitScan(event, headers, userId, userEmail, apiKey) {
     if (!apiKey) {
-        return { statusCode: 500, headers, body: JSON.stringify({ error: "Missing PRISM_API_KEY env var" }) };
+        return { statusCode: 500, headers, body: JSON.stringify({ error: "Missing PRISM_API_KEY" }) };
     }
 
     const prismEnv = process.env.PRISM_ENV || 'production';
     const isSandbox = prismEnv.toLowerCase() === 'sandbox';
-    const baseUrl = isSandbox ? "https://sandbox-api.hosted.prismlabs.tech" : "https://api.hosted.prismlabs.tech";
+    const hostname = isSandbox ? "sandbox-api.hosted.prismlabs.tech" : "api.hosted.prismlabs.tech";
+    const baseUrl = `https://${hostname}`;
     const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718"; 
     const prismUserToken = `user_${userId}`;
 
-    const prismHeaders = {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json;v=1'
+    const defaultRequestOptions = {
+        hostname: hostname,
+        port: 443,
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${apiKey.trim()}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json;v=1',
+            'User-Agent': 'EmbraceHealth-Scanner/1.0'
+        },
+        timeout: 15000 // 15 second timeout
     };
 
     try {
-        let body = {};
-        try { body = JSON.parse(event.body || "{}"); } catch (e) {}
-
-        console.log(`[Prism] Initializing for user: ${prismUserToken} on ${baseUrl}`);
-
+        console.log(`[Prism] Checking user ${prismUserToken}`);
+        
         // 1. Ensure User
-        const userCheck = await fetch(`${baseUrl}/users/${prismUserToken}`, { method: 'GET', headers: prismHeaders });
+        const userCheck = await prismRequest({
+            ...defaultRequestOptions,
+            path: `/users/${prismUserToken}`
+        });
+
         if (userCheck.status === 404) {
-            console.log(`[Prism] Creating new user ${prismUserToken}`);
-            await fetch(`${baseUrl}/users`, { 
-                method: 'POST', 
-                headers: prismHeaders, 
-                body: JSON.stringify({
-                    token: prismUserToken,
-                    email: userEmail || 'user@example.com',
-                    weight: { value: 75, unit: 'kg' },
-                    height: { value: 1.8, unit: 'm' },
-                    sex: 'male',
-                    birthDate: '1990-01-01',
-                    researchConsent: true,
-                    termsOfService: { accepted: true, version: "1" }
-                })
+            console.log(`[Prism] Creating user ${prismUserToken}`);
+            const createRes = await prismRequest({
+                ...defaultRequestOptions,
+                method: 'POST',
+                path: '/users'
+            }, {
+                token: prismUserToken,
+                email: userEmail || 'user@example.com',
+                weight: { value: 75, unit: 'kg' },
+                height: { value: 1.8, unit: 'm' },
+                sex: 'male',
+                birthDate: '1990-01-01',
+                researchConsent: true,
+                termsOfService: { accepted: true, version: "1" }
             });
+            
+            if (!createRes.ok) {
+                return { statusCode: 502, headers, body: JSON.stringify({ error: "Failed to create Prism user", details: createRes.data }) };
+            }
+        } else if (!userCheck.ok) {
+            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism User check failed", details: userCheck.data }) };
         }
 
         // 2. Create Session
-        const scanRes = await fetch(`${baseUrl}/scans`, {
+        console.log(`[Prism] Creating session for ${prismUserToken}`);
+        let body = {};
+        try { body = JSON.parse(event.body || "{}"); } catch (e) {}
+
+        const scanRes = await prismRequest({
+            ...defaultRequestOptions,
             method: 'POST',
-            headers: prismHeaders,
-            body: JSON.stringify({
-                userToken: prismUserToken,
-                assetConfigId: assetConfigId,
-                deviceConfigName: body.deviceConfigName || 'ANDROID_SCANNER'
-            })
+            path: '/scans'
+        }, {
+            userToken: prismUserToken,
+            assetConfigId: assetConfigId,
+            deviceConfigName: body.deviceConfigName || 'ANDROID_SCANNER'
         });
 
-        const scanData = await scanRes.json();
-        console.log(`[Prism] Scan creation status: ${scanRes.status}`);
-
         if (!scanRes.ok) {
-            console.error("[Prism] Error creating scan:", scanData);
-            return { 
-                statusCode: scanRes.status, 
-                headers, 
-                body: JSON.stringify({ error: "Prism API Error", details: scanData }) 
-            };
+            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session creation failed", details: scanRes.data }) };
         }
 
-        // Extract token - Prism sometimes returns it as 'securityToken' or just 'token'
-        const securityToken = scanData.securityToken || scanData.token;
+        const securityToken = scanRes.data.securityToken || scanRes.data.token;
 
         if (!securityToken) {
-            console.error("[Prism] No security token returned in response:", scanData);
-            return { 
-                statusCode: 502, 
-                headers, 
-                body: JSON.stringify({ error: "Prism API returned no security token", details: scanData }) 
-            };
+            return { statusCode: 502, headers, body: JSON.stringify({ error: "No security token returned", details: scanRes.data }) };
         }
 
         return {
             statusCode: 201,
             headers,
             body: JSON.stringify({
-                scanId: scanData.id || scanData._id,
+                scanId: scanRes.data.id || scanRes.data._id,
                 securityToken: securityToken,
                 apiBaseUrl: baseUrl,
                 assetConfigId: assetConfigId,
                 mode: isSandbox ? 'sandbox' : 'production'
             })
         };
+
     } catch (e) {
-        console.error("[Prism] Critical failure:", e);
-        return { statusCode: 500, headers, body: JSON.stringify({ error: "Internal failure", message: e.message }) };
+        console.error("[Prism] Handshake error:", e);
+        return { 
+            statusCode: 502, 
+            headers, 
+            body: JSON.stringify({ error: "Connection to Prism Labs failed", message: e.message }) 
+        };
     }
 }
