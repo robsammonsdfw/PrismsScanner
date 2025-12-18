@@ -143,7 +143,6 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
     const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718"; 
     const prismUserToken = `user_${userId}`;
 
-    // CRITICAL: Must use 'application/json;v=1' for routing to work
     const defaultRequestOptions = {
         hostname: hostname,
         port: 443,
@@ -151,16 +150,18 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             'Authorization': `Bearer ${apiKey.trim()}`,
             'Content-Type': 'application/json',
             'Accept': 'application/json;v=1',
-            'User-Agent': 'EmbraceHealth-Scanner/1.3'
+            'User-Agent': 'EmbraceHealth-Scanner/1.4'
         }
     };
 
     try {
         console.log(`[Prism] Initializing User: ${prismUserToken}`);
         
+        // FIX: Added 'region' and removed forbidden 'acceptedAt' from termsOfService
         const userPayload = {
             token: prismUserToken,
             email: userEmail || 'user@example.com',
+            region: 'north_america',
             weight: { value: 75, unit: 'kg' },
             height: { value: 1.8, unit: 'm' },
             sex: 'male',
@@ -168,8 +169,7 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             researchConsent: true,
             termsOfService: { 
                 accepted: true, 
-                version: "2024-01-01",
-                acceptedAt: new Date().toISOString()
+                version: "1.0"
             }
         };
 
@@ -206,7 +206,6 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session Failed", details: scanRes.data }) };
         }
 
-        // Extract security token (Prism API uses 'token' or 'securityToken' depending on version)
         const securityToken = scanRes.data.token || scanRes.data.securityToken || scanRes.data.clientToken;
 
         if (!securityToken) {
