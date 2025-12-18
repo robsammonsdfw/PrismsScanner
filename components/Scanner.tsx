@@ -4,7 +4,7 @@ import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { initScanSession } from '../services/api';
-import { Loader2, X, AlertTriangle, LogOut, RefreshCcw } from 'lucide-react';
+import { Loader2, AlertTriangle, LogOut, RefreshCcw } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -21,6 +21,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [retryCount, setRetryCount] = useState<number>(0);
 
   const startSession = async () => {
+    console.log("[Scanner] --- Starting Session Flow ---");
     setIsLoading(true);
     setError(null);
     setIsAuthError(false);
@@ -35,28 +36,32 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       };
 
       const deviceConfigName = getDeviceConfig();
-      console.log(`[Scanner] Initializing for ${deviceConfigName}`);
+      console.log(`[Scanner] Device identified as: ${deviceConfigName}`);
       
       const sessionData = await initScanSession(deviceConfigName);
+      console.log("[Scanner] Backend API response received:", sessionData);
+
       const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
+      
+      if (!scanId || !securityToken) {
+          throw new Error("Invalid session data: Missing scanId or securityToken");
+      }
 
       waitForSDK(scanId, securityToken, apiBaseUrl, assetConfigId, mode);
     } catch (err: any) {
-      console.error("[Scanner] Initialization Error:", err);
+      console.error("[Scanner] startSession failed:", err);
       setIsLoading(false);
       
-      const errorMessage = err.message || "";
+      const errorMessage = err.message || "Unknown error";
       if (errorMessage.toLowerCase().includes('expired') || errorMessage.includes('401')) {
           setIsAuthError(true);
           setError("Your session has expired. Please log in again.");
       } else {
           setError(
               <div className="text-center">
-                  <p className="font-bold text-red-400 mb-2 text-xl">Connection Error</p>
+                  <p className="font-bold text-red-400 mb-2 text-xl">Initialization Failed</p>
                   <p className="text-sm opacity-80 mb-4 max-w-xs mx-auto">
-                    {errorMessage.includes('Failed to fetch') 
-                      ? "Could not reach the scan server. Please check your network or try again." 
-                      : errorMessage}
+                    {errorMessage}
                   </p>
               </div>
           );
@@ -64,69 +69,104 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     }
   };
 
+  const renderSDK = (prism: any, config: PrismConfig) => {
+    if (initializedRef.current) return;
+    console.log("[Scanner] Rendering Prism SDK with config:", config);
+    
+    try {
+        prism.render(config);
+        initializedRef.current = true;
+        setIsLoading(false);
+        console.log("[Scanner] Render call executed successfully.");
+    } catch (err: any) {
+        console.error("[Scanner] Render exception:", err);
+        setError(`Failed to initialize camera view: ${err.message}`);
+        setIsLoading(false);
+    }
+  };
+
   const waitForSDK = (scanId: string, token: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
     setStatusMessage("Launching Scanner UI...");
-    
+    console.log("[Scanner] waitForSDK: Setting up event listeners and fallback.");
+
+    const config: PrismConfig & { [key: string]: any } = {
+        apiKey: "token_based_auth", 
+        scanId, 
+        token, 
+        mode, 
+        apiBaseUrl,
+        apiUrl: apiBaseUrl,
+        baseUrl: apiBaseUrl,
+        assetConfigId,
+        container: containerRef.current as HTMLElement,
+        translationOverrides: {
+            leveling: { title: "Hold phone vertically" },
+        },
+        onSuccess: (data: any) => {
+            console.log('[Scanner] SDK success callback:', data);
+            onComplete(data);
+        },
+        onFailure: (err: any) => {
+            console.error('[Scanner] SDK failure callback:', err);
+            setError(`Scanning process failed: ${err.message || 'Check camera permissions'}`);
+        },
+        onClose: () => onClose()
+    };
+
+    // 1. Immediate Check: Is Prism already on the window?
+    const existingPrism = (window as any).Prism;
+    if (existingPrism) {
+        console.log("[Scanner] Prism found immediately on window. Rendering now.");
+        renderSDK(existingPrism, config);
+        return;
+    }
+
+    // 2. Event-based Check
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
-        if (initializedRef.current) return;
-        
+        console.log("[Scanner] onPrismLoaded event received.");
         const prism = event.detail.prism;
-        if (!containerRef.current) return;
-
-        console.log(`[Scanner] Rendering SDK with Scan ID: ${scanId}`);
-        initializedRef.current = true;
-
-        const config: PrismConfig & { [key: string]: any } = {
-            apiKey: "token_based_auth", 
-            scanId, 
-            token, 
-            mode, 
-            apiBaseUrl,
-            apiUrl: apiBaseUrl,
-            baseUrl: apiBaseUrl,
-            assetConfigId,
-            container: containerRef.current,
-            translationOverrides: {
-                leveling: { title: "Hold phone vertically" },
-            },
-            onSuccess: (data: any) => {
-                console.log('[Scanner] Success:', data);
-                onComplete(data);
-            },
-            onFailure: (err: any) => {
-                console.error('[Scanner] SDK Error:', err);
-                setError('Scanning process failed. Please restart.');
-            },
-            onClose: () => onClose()
-        };
-
-        try {
-            prism.render(config);
-            setIsLoading(false);
-        } catch (err) {
-            console.error("[Scanner] Render Error:", err);
-            setError("Failed to initialize the 3D camera view.");
-        }
+        renderSDK(prism, config);
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // Safety timeout: If SDK doesn't load within 12 seconds
+    // 3. Fallback: If event doesn't fire after 3 seconds, try searching window again
     setTimeout(() => {
         if (!initializedRef.current && !error) {
-            console.warn("[Scanner] SDK Load Timeout");
-            setStatusMessage("Loading components... (this is taking longer than usual)");
+            console.warn("[Scanner] Event onPrismLoaded did not fire. Checking window again.");
+            const fallbackPrism = (window as any).Prism;
+            if (fallbackPrism) {
+                console.log("[Scanner] Prism found via fallback window check.");
+                renderSDK(fallbackPrism, config);
+            } else {
+                console.error("[Scanner] SDK not found on window or via event.");
+                setStatusMessage("Struggling to load SDK components...");
+            }
         }
-    }, 8000);
+    }, 3000);
+
+    // 4. Critical Timeout
+    setTimeout(() => {
+        if (!initializedRef.current && !error) {
+            console.error("[Scanner] Hard timeout reached (12s). SDK failed to signal readiness.");
+            setError("The scanner components failed to load. Please refresh the page.");
+            setIsLoading(false);
+        }
+    }, 12000);
   };
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     startSession();
-    return () => { document.body.style.overflow = ''; };
+    return () => { 
+        document.body.style.overflow = ''; 
+        // Cleanup listener if component unmounts
+        // window.removeEventListener('onPrismLoaded', ...);
+    };
   }, [retryCount]);
 
   const handleRetry = () => {
+    console.log("[Scanner] User initiated retry.");
     setRetryCount(prev => prev + 1);
   };
 

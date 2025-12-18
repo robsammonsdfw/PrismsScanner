@@ -22,7 +22,7 @@ const getCleanUrl = (base: string, endpoint: string) => {
 export const initScanSession = async (deviceConfigName?: string) => {
     const endpoint = getCleanUrl(SCANNER_API_URL, "init"); 
 
-    console.log(`[API] Fetching: ${endpoint}`);
+    console.log(`[API] Starting request to: ${endpoint}`);
 
     try {
         const response = await fetch(endpoint, {
@@ -34,16 +34,26 @@ export const initScanSession = async (deviceConfigName?: string) => {
             })
         });
 
+        console.log(`[API] Response status: ${response.status} ${response.statusText}`);
+
         if (!response.ok) {
             const errorBody = await response.json().catch(() => ({}));
+            console.error("[API] Error body:", errorBody);
             throw new Error(errorBody.error || errorBody.message || `Server Error (${response.status})`);
         }
 
-        return await response.json();
+        const data = await response.json();
+        console.log("[API] Session data success:", {
+            scanId: data.scanId,
+            mode: data.mode,
+            baseUrl: data.apiBaseUrl,
+            hasToken: !!data.securityToken
+        });
+        return data;
     } catch (err: any) {
-        console.error("[API] Request failed:", err);
+        console.error("[API] initScanSession FAILED:", err);
         if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
-            throw new Error('Connection failed. This is usually a CORS error or the backend is offline.');
+            throw new Error('Connection failed. Please check if your browser is blocking the request (CORS/AdBlock).');
         }
         throw err;
     }
