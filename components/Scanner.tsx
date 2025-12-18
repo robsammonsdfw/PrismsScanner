@@ -4,7 +4,7 @@ import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { initScanSession } from '../services/api';
-import { Loader2, AlertTriangle, RefreshCcw, WifiOff, Camera } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCcw, Camera, Play } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -15,16 +15,17 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isReadyToStart, setIsReadyToStart] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("Initializing...");
   const [error, setError] = useState<React.ReactNode | null>(null);
-  const [isAuthError, setIsAuthError] = useState<boolean>(false);
+  const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [retryCount, setRetryCount] = useState<number>(0);
 
   const startSession = async () => {
     console.log("[Scanner] Starting Session Flow ---");
     setIsLoading(true);
+    setIsReadyToStart(false);
     setError(null);
-    setIsAuthError(false);
     setStatusMessage("Connecting to secure server...");
 
     try {
@@ -37,41 +38,57 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       const deviceConfigName = getDeviceConfig();
       const sessionData = await initScanSession(deviceConfigName);
       
-      const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
-      
-      if (!scanId || !securityToken) {
-          throw new Error("Invalid session data: Missing scanId or securityToken");
+      if (!sessionData.scanId || !sessionData.securityToken) {
+          throw new Error("Invalid session data returned from server.");
       }
 
-      waitForSDK(scanId, securityToken, apiBaseUrl, assetConfigId, mode);
+      setSessionInfo(sessionData);
+      setIsReadyToStart(true);
+      setStatusMessage("Connection established.");
+      setIsLoading(false);
     } catch (err: any) {
       console.error("[Scanner] startSession failed:", err);
       setIsLoading(false);
-      
-      const errorMessage = err.message || "Connection failed";
-      if (errorMessage.toLowerCase().includes('expired') || errorMessage.includes('401')) {
-          setIsAuthError(true);
-          setError("Your session has expired. Please log in again.");
-      } else {
-          setError(
-              <div className="text-center w-full max-w-sm">
-                  <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                  <p className="font-bold text-slate-100 mb-2 text-xl">Initialization Failed</p>
-                  <p className="text-sm text-zinc-400 mb-6 leading-relaxed">{errorMessage}</p>
-              </div>
-          );
-      }
+      setError(
+          <div className="text-center w-full max-w-sm px-6">
+              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <p className="font-bold text-slate-100 mb-2 text-xl">Connection Error</p>
+              <p className="text-sm text-zinc-400 mb-6 leading-relaxed">{err.message || "Failed to initialize session"}</p>
+          </div>
+      );
     }
+  };
+
+  const handleStartScanner = async () => {
+    if (!sessionInfo) return;
+    
+    setIsLoading(true);
+    setStatusMessage("Requesting camera access...");
+
+    // 1. Explicitly request camera to "prime" the browser permission
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        // Close it immediately so Prism can take over the hardware
+        stream.getTracks().forEach(track => track.stop());
+    } catch (err) {
+        console.warn("[Scanner] Pre-check camera permission failed:", err);
+        // We don't throw here, let Prism try its own way
+    }
+
+    // 2. Wait for SDK and render
+    waitForSDK(
+        sessionInfo.scanId, 
+        sessionInfo.securityToken, 
+        sessionInfo.apiBaseUrl, 
+        sessionInfo.assetConfigId, 
+        sessionInfo.mode
+    );
   };
 
   const renderSDK = (prism: any, config: PrismConfig) => {
     if (initializedRef.current || !containerRef.current) return;
     
-    console.log("[Scanner] Executing Prism.render with config:", {
-        scanId: config.scanId,
-        mode: config.mode,
-        assetConfigId: config.assetConfigId
-    });
+    console.log("[Scanner] Rendering Prism SDK...");
 
     try {
         prism.render({
@@ -79,8 +96,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             container: containerRef.current
         });
         initializedRef.current = true;
-        // Keep loading true for a moment while the SDK actually starts the camera
-        setTimeout(() => setIsLoading(false), 1500);
+        // Fade out our loader once render is called
+        setTimeout(() => setIsLoading(false), 2000);
     } catch (err: any) {
         console.error("[Scanner] Prism.render failed:", err);
         setError(`Render Error: ${err.message}`);
@@ -89,15 +106,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   };
 
   const waitForSDK = (scanId: string, securityToken: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
-    setStatusMessage("Preparing camera view...");
-
     const config: PrismConfig = {
         apiKey: "token_based_auth", 
         scanId, 
         token: securityToken,
         mode, 
         apiBaseUrl,
-        assetConfigId, // CRITICAL: This was missing in some previous logic
+        assetConfigId,
         translationOverrides: {
             leveling: { title: "Hold phone vertically" },
         },
@@ -107,7 +122,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         },
         onFailure: (err: any) => {
             console.error('[Scanner] onFailure Callback:', err);
-            setError(`Scanner failed: ${err.message || 'Permissions denied'}`);
+            setError(
+                <div className="text-center px-6">
+                    <Camera className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                    <p className="font-bold text-white mb-2">Camera Error</p>
+                    <p className="text-sm text-zinc-400">{err.message || "Please check camera permissions in your browser settings."}</p>
+                </div>
+            );
+            setIsLoading(false);
         },
         onClose: () => onClose()
     };
@@ -125,17 +147,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // Fallback if event is missed
+    // Safety check interval
     const checkInterval = setInterval(() => {
         const prism = (window as any).Prism;
         if (prism && !initializedRef.current) {
             renderSDK(prism, config);
             clearInterval(checkInterval);
         }
-    }, 500);
+    }, 1000);
 
-    // Timeout after 10 seconds
-    setTimeout(() => clearInterval(checkInterval), 10000);
+    setTimeout(() => clearInterval(checkInterval), 15000);
   };
 
   useEffect(() => {
@@ -143,7 +164,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     startSession();
     return () => { 
         document.body.style.overflow = '';
-        window.removeEventListener('onPrismLoaded', () => {});
     };
   }, [retryCount]);
 
@@ -154,52 +174,56 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans overflow-hidden">
-      {/* Container for Prism SDK */}
+      {/* Container for Prism SDK - Always on bottom, but visible */}
       <div 
         ref={containerRef} 
         id="prism-container"
         className="absolute inset-0 w-full h-full bg-black z-10" 
       />
 
-      {isLoading && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] backdrop-blur-md">
-          <div className="relative mb-8">
-            <div className="absolute inset-0 bg-emerald-500/20 blur-2xl rounded-full animate-pulse"></div>
-            <Loader2 className="w-16 h-16 text-emerald-500 animate-spin relative z-10" />
-          </div>
-          
-          <div className="text-center space-y-3 px-6 max-w-xs">
-            <p className="text-emerald-400 font-bold tracking-widest uppercase text-xs animate-pulse">
-                System Handshake
-            </p>
-            <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
-            
-            <div className="pt-8 flex flex-col items-center gap-2 opacity-60">
-                <div className="p-3 bg-white/5 rounded-full">
-                    <Camera className="w-5 h-5 text-emerald-400" />
-                </div>
-                <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">
-                    Allow camera access when prompted
-                </p>
+      {/* Manual Start Gesture Screen */}
+      {isReadyToStart && !isLoading && !error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[40] p-8 text-center animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 border border-emerald-500/20">
+                <Camera className="w-10 h-10 text-emerald-500" />
             </div>
+            <h2 className="text-2xl font-bold mb-3">Ready to Scan</h2>
+            <p className="text-zinc-400 text-sm mb-10 max-w-xs leading-relaxed">
+                To begin your 3D scan, we need to access your camera. Please click the button below and "Allow" access.
+            </p>
+            <button 
+                onClick={handleStartScanner}
+                className="w-full max-w-xs py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+            >
+                <Play className="w-6 h-6 fill-current" />
+                Start Camera
+            </button>
+            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm font-medium hover:text-white transition-colors">
+                Cancel
+            </button>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {isLoading && !error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 z-[50] backdrop-blur-sm transition-opacity duration-500">
+          <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-6" />
+          <div className="text-center space-y-2 px-6">
+            <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Secure Connection Active</p>
           </div>
         </div>
       )}
 
+      {/* Error Overlay */}
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[70] p-8 text-center overflow-y-auto">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] p-8 text-center">
           <div className="mb-10 w-full flex justify-center">{error}</div>
-          <div className="flex flex-col gap-4 w-full max-w-xs shrink-0">
-            {isAuthError ? (
-              <button onClick={() => window.location.href = 'https://main.embracehealth.ai'} className="w-full py-4 bg-emerald-600 rounded-xl font-bold">Log In Again</button>
-            ) : (
-              <>
-                <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform">
-                  <RefreshCcw className="w-5 h-5" /> Try Again
-                </button>
-                <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold opacity-60 hover:opacity-100">Return to Home</button>
-              </>
-            )}
+          <div className="flex flex-col gap-4 w-full max-w-xs">
+            <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
+                <RefreshCcw className="w-5 h-5" /> Try Again
+            </button>
+            <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold text-zinc-400">Return to Home</button>
           </div>
         </div>
       )}
