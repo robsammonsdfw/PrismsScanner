@@ -13,11 +13,16 @@ const getHeaders = () => {
   };
 };
 
-export const initScanSession = async (deviceConfigName?: string) => {
-    const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
-    const endpoint = `${baseUrl}/init`; 
+const getCleanUrl = (base: string, endpoint: string) => {
+    const cleanBase = base.replace(/\/+$/, "");
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return `${cleanBase}${cleanEndpoint}`;
+};
 
-    console.log(`[API] Initializing session at: ${endpoint}`);
+export const initScanSession = async (deviceConfigName?: string) => {
+    const endpoint = getCleanUrl(SCANNER_API_URL, "init"); 
+
+    console.log(`[API] Fetching: ${endpoint}`);
 
     try {
         const response = await fetch(endpoint, {
@@ -30,24 +35,13 @@ export const initScanSession = async (deviceConfigName?: string) => {
         });
 
         if (!response.ok) {
-            console.error(`[API] Server responded with status: ${response.status}`);
-            let errorMessage = `Server Error (${response.status})`;
-            try {
-                const errorBody = await response.json();
-                console.error("[API] Error payload:", errorBody);
-                errorMessage = errorBody.error || errorBody.message || errorMessage;
-                if (errorBody.details) errorMessage += `: ${errorBody.details}`;
-            } catch (e) {
-                console.warn('[API] Could not parse error response JSON');
-            }
-            throw new Error(errorMessage);
+            const errorBody = await response.json().catch(() => ({}));
+            throw new Error(errorBody.error || errorBody.message || `Server Error (${response.status})`);
         }
 
-        const data = await response.json();
-        console.log("[API] Session initialized successfully:", data.scanId);
-        return data;
+        return await response.json();
     } catch (err: any) {
-        console.error("[API] Fetch execution failed:", err);
+        console.error("[API] Request failed:", err);
         if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
             throw new Error('Connection failed. This is usually a CORS error or the backend is offline.');
         }
@@ -56,10 +50,7 @@ export const initScanSession = async (deviceConfigName?: string) => {
 };
 
 export const saveBodyScan = async (data: any) => {
-  const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
-  const endpoint = baseUrl; 
-
-  console.log(`[API] Saving scan data to: ${endpoint}`);
+  const endpoint = getCleanUrl(SCANNER_API_URL, "body-scans"); 
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -67,34 +58,25 @@ export const saveBodyScan = async (data: any) => {
     body: JSON.stringify(data)
   });
   
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error("[API] Save failed:", errText);
-    throw new Error('Failed to save scan results');
-  }
-  
+  if (!response.ok) throw new Error('Failed to save scan results');
   return response.json();
 };
 
 export const getScanHistory = async () => {
-  const baseUrl = SCANNER_API_URL.replace(/\/$/, ""); 
-  const endpoint = baseUrl; 
+  const endpoint = getCleanUrl(SCANNER_API_URL, "body-scans"); 
 
   const response = await fetch(endpoint, {
     method: 'GET',
     headers: getHeaders()
   });
 
-  if (!response.ok) {
-    throw new Error('Failed to fetch scan history');
-  }
-  
+  if (!response.ok) throw new Error('Failed to fetch scan history');
   return response.json();
 };
 
 export const checkAuthToken = (): boolean => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    return !!token && token.length > 10; // Basic validity check
+    return !!token && token.length > 10;
 };
 
 export const setAuthToken = (token: string) => {

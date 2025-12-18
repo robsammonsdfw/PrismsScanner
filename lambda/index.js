@@ -7,35 +7,37 @@ import {
 import { Buffer } from 'buffer';
 
 export const handler = async (event) => {
-    // --- CORS CONFIGURATION (ROBUST IMPLEMENTATION) ---
+    // --- CORS CONFIGURATION (MAXIMUM COMPATIBILITY) ---
     const requestHeaders = event.headers || {};
-    // Extract origin case-insensitively
-    const requestOrigin = requestHeaders.origin || requestHeaders.Origin || "";
+    const requestOrigin = requestHeaders.origin || requestHeaders.Origin || "*";
     
-    // For CORS with Credentials: true, we must reflect the specific origin.
-    // If no origin is provided (e.g., server-side call), we fallback to *
-    const allowedOrigin = requestOrigin ? requestOrigin : "*";
-
-    const headers = {
-        "Access-Control-Allow-Origin": allowedOrigin,
+    // Define headers that are permissive for CORS
+    const corsHeaders = {
+        "Access-Control-Allow-Origin": requestOrigin,
         "Access-Control-Allow-Headers": "Content-Type, Authorization, authorization, X-Api-Key, x-api-key, X-Requested-With, Accept, Origin",
         "Access-Control-Allow-Methods": "OPTIONS,POST,GET,PUT,DELETE",
         "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Max-Age": "86400", // Cache preflight for 24 hours
+        "Access-Control-Max-Age": "86400",
         "Content-Type": "application/json"
     };
 
     try {
         const method = (event.requestContext?.http?.method || event.httpMethod || "").toUpperCase();
-        const path = event.rawPath || event.path || "/";
+        let path = event.rawPath || event.path || "/";
         
+        // Normalize path (ensure it starts with / and remove trailing slash if not root)
+        if (!path.startsWith('/')) path = '/' + path;
+        if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+
         console.log(`[ScannerService] ${method} ${path} from ${requestOrigin}`);
 
         // --- 1. IMMEDIATE PREFLIGHT HANDLER ---
+        // We handle OPTIONS first to ensure the browser gets CORS clearance 
+        // even if the rest of the function has configuration errors.
         if (method === 'OPTIONS') {
             return { 
                 statusCode: 204, 
-                headers, 
+                headers: corsHeaders, 
                 body: "" 
             };
         }
@@ -43,16 +45,24 @@ export const handler = async (event) => {
         // --- 2. CONFIGURATION VALIDATION ---
         const {
             PRISM_API_KEY,
-            PRISM_ENV,
-            JWT_SECRET
+            JWT_SECRET,
+            PRISM_ENV
         } = process.env;
 
-        if (!PRISM_API_KEY || !JWT_SECRET) {
-            console.error("Missing critical environment variables (PRISM_API_KEY or JWT_SECRET)");
+        const missing = [];
+        if (!PRISM_API_KEY) missing.push("PRISM_API_KEY");
+        if (!JWT_SECRET) missing.push("JWT_SECRET");
+
+        if (missing.length > 0) {
+            console.error(`[ScannerService] CRITICAL: Missing environment variables: ${missing.join(", ")}`);
             return { 
                 statusCode: 500, 
-                headers, 
-                body: JSON.stringify({ error: "Server Configuration Error: Missing Keys" }) 
+                headers: corsHeaders, 
+                body: JSON.stringify({ 
+                    error: "Server Configuration Error", 
+                    details: `Missing: ${missing.join(", ")}`,
+                    hint: "Check Lambda Environment Variables in AWS Console"
+                }) 
             };
         }
 
@@ -70,83 +80,69 @@ export const handler = async (event) => {
                     userEmail = decoded.email || userEmail;
                 }
             } catch (e) {
-                console.warn("Token verification failed:", e.message);
+                console.warn("[ScannerService] Token verification failed:", e.message);
                 return { 
                     statusCode: 401, 
-                    headers, 
-                    body: JSON.stringify({ error: "Unauthorized: Invalid or Expired Token", details: e.message }) 
+                    headers: corsHeaders, 
+                    body: JSON.stringify({ error: "Unauthorized: Invalid token", details: e.message }) 
                 };
             }
-        } else if (!path.endsWith('/ping')) {
-            // Require auth for everything except ping
+        } else if (path !== '/ping') {
             return { 
                 statusCode: 401, 
-                headers, 
-                body: JSON.stringify({ error: "Unauthorized: No Authorization header provided" }) 
+                headers: corsHeaders, 
+                body: JSON.stringify({ error: "Unauthorized: No token provided" }) 
             };
         }
 
         // --- 4. ROUTING ---
-        if (path.endsWith('/ping')) {
+        if (path === '/ping') {
             return { 
                 statusCode: 200, 
-                headers, 
-                body: JSON.stringify({ 
-                    status: "ok", 
-                    message: "Service Operational", 
-                    userId,
-                    timestamp: new Date().toISOString() 
-                }) 
+                headers: corsHeaders, 
+                body: JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }) 
             };
         }
 
-        if (path.endsWith('/init')) {
-            if (method !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ error: "Method Not Allowed" }) };
-            return await handleInitScan(event, headers, userId, userEmail, PRISM_API_KEY, PRISM_ENV);
+        if (path === '/init') {
+            if (method !== 'POST') return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: "Method Not Allowed" }) };
+            return await handleInitScan(event, corsHeaders, userId, userEmail, PRISM_API_KEY, PRISM_ENV);
         }
 
-        if (path.endsWith('/history') || (path.endsWith('/body-scans') && method === 'GET')) {
-            const scans = await getBodyScans(userId);
-            return { statusCode: 200, headers, body: JSON.stringify(scans) };
-        }
-
-        if (method === 'POST') {
-            return await handleSaveScan(event, headers, userId, PRISM_API_KEY, PRISM_ENV);
+        if (path === '/history' || path === '/body-scans') {
+            if (method === 'GET') {
+                const scans = await getBodyScans(userId);
+                return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(scans) };
+            }
+            if (method === 'POST') {
+                return await handleSaveScan(event, corsHeaders, userId);
+            }
         }
 
         return { 
             statusCode: 404, 
-            headers, 
+            headers: corsHeaders, 
             body: JSON.stringify({ error: `Not Found: ${path}` }) 
         };
 
     } catch (criticalError) {
-        console.error("[ScannerService] Critical Crash:", criticalError);
+        console.error("[ScannerService] Unexpected Crash:", criticalError);
         return { 
             statusCode: 500, 
-            headers, 
-            body: JSON.stringify({ 
-                error: "Internal Server Error", 
-                details: criticalError.message,
-                stack: process.env.NODE_ENV === 'development' ? criticalError.stack : undefined
-            }) 
+            headers: corsHeaders, 
+            body: JSON.stringify({ error: "Internal Server Error", message: criticalError.message }) 
         };
     }
 };
 
 async function handleInitScan(event, headers, userId, userEmail, apiKey, envName) {
-    console.log(`[Init] Initializing for user: ${userId}`);
-
     let body = {};
     try {
         if (event.body) {
             body = JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body);
         }
-    } catch (e) { 
-        console.warn("Failed to parse request body as JSON");
-    }
+    } catch (e) { console.warn("Body parse failed"); }
 
-    const deviceConfigName = body.deviceConfigName || 'ANDROID_SCANNER';
     const isSandbox = (envName || '').toLowerCase() === 'sandbox';
     const baseUrl = isSandbox ? "https://sandbox-api.hosted.prismlabs.tech" : "https://api.hosted.prismlabs.tech";
     const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718"; 
@@ -159,50 +155,39 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey, envName
     };
 
     try {
-        // Step 1: Ensure User Exists
-        const checkRes = await fetch(`${baseUrl}/users/${prismUserToken}`, { method: 'GET', headers: prismHeaders });
-        if (!checkRes.ok && checkRes.status === 404) {
-            console.log("[Init] Creating new Prism user...");
-            const createPayload = {
-                token: prismUserToken,
-                email: userEmail,
-                weight: { value: 70, unit: 'kg' },
-                height: { value: 1.75, unit: 'm' },
-                sex: 'female', 
-                birthDate: '1990-01-01',
-                researchConsent: true,
-                termsOfService: { accepted: true, version: "1" }
-            };
-            const createRes = await fetch(`${baseUrl}/users`, { 
-                method: 'POST', 
-                headers: prismHeaders, 
-                body: JSON.stringify(createPayload) 
+        // Simple User Sync
+        await fetch(`${baseUrl}/users/${prismUserToken}`, { method: 'GET', headers: prismHeaders })
+            .then(async res => {
+                if (res.status === 404) {
+                    await fetch(`${baseUrl}/users`, { 
+                        method: 'POST', 
+                        headers: prismHeaders, 
+                        body: JSON.stringify({
+                            token: prismUserToken,
+                            email: userEmail,
+                            weight: { value: 70, unit: 'kg' },
+                            height: { value: 1.75, unit: 'm' },
+                            sex: 'female',
+                            birthDate: '1990-01-01',
+                            researchConsent: true,
+                            termsOfService: { accepted: true, version: "1" }
+                        })
+                    });
+                }
             });
-            if (!createRes.ok && createRes.status !== 409) {
-                const errText = await createRes.text();
-                throw new Error(`Prism User Creation Failed: ${errText}`);
-            }
-        }
 
-        // Step 2: Create Scan Session
-        console.log("[Init] Creating scan session...");
-        const scanPayload = {
-            userToken: prismUserToken,
-            assetConfigId: assetConfigId,
-            deviceConfigName: deviceConfigName
-        };
-
+        // Create Session
         const scanRes = await fetch(`${baseUrl}/scans`, {
             method: 'POST',
             headers: prismHeaders,
-            body: JSON.stringify(scanPayload)
+            body: JSON.stringify({
+                userToken: prismUserToken,
+                assetConfigId: assetConfigId,
+                deviceConfigName: body.deviceConfigName || 'ANDROID_SCANNER'
+            })
         });
 
-        if (!scanRes.ok) {
-            const errText = await scanRes.text();
-            throw new Error(`Prism Scan Creation Failed: ${errText}`);
-        }
-
+        if (!scanRes.ok) throw new Error(`Prism API Error: ${await scanRes.text()}`);
         const scanData = await scanRes.json();
         
         return {
@@ -217,8 +202,8 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey, envName
             })
         };
     } catch (e) {
-        console.error("[Init] Prism API Communication Error:", e);
-        throw e;
+        console.error("Prism logic failed:", e);
+        return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism API failure", details: e.message }) };
     }
 }
 
@@ -226,12 +211,8 @@ async function handleSaveScan(event, headers, userId) {
     try {
         const body = JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body);
         const saved = await saveBodyScan(userId, body);
-        return {
-            statusCode: 201,
-            headers,
-            body: JSON.stringify(saved)
-        };
+        return { statusCode: 201, headers, body: JSON.stringify(saved) };
     } catch (e) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: "Failed to save scan", details: e.message }) };
+        return { statusCode: 400, headers, body: JSON.stringify({ error: "Save failed" }) };
     }
 }
