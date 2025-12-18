@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import '@prismlabs/web-scan-ui-kit';
+// We try to import Prism directly as well as check the window object
+import * as PrismModule from '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { initScanSession } from '../services/api';
@@ -39,12 +40,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       const sessionData = await initScanSession(deviceConfigName);
       
       if (!sessionData.scanId || !sessionData.securityToken) {
-          throw new Error("Invalid session data returned from server.");
+          throw new Error("Invalid session data: Missing scanId or token");
       }
 
       setSessionInfo(sessionData);
       setIsReadyToStart(true);
-      setStatusMessage("Connection established.");
       setIsLoading(false);
     } catch (err: any) {
       console.error("[Scanner] startSession failed:", err);
@@ -52,30 +52,20 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       setError(
           <div className="text-center w-full max-w-sm px-6">
               <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-              <p className="font-bold text-slate-100 mb-2 text-xl">Connection Error</p>
-              <p className="text-sm text-zinc-400 mb-6 leading-relaxed">{err.message || "Failed to initialize session"}</p>
+              <p className="font-bold text-slate-100 mb-2 text-xl">Initialization Failed</p>
+              <p className="text-sm text-zinc-400 mb-6">{err.message || "Please check your internet connection."}</p>
           </div>
       );
     }
   };
 
-  const handleStartScanner = async () => {
+  const handleStartScanner = () => {
     if (!sessionInfo) return;
-    
     setIsLoading(true);
-    setStatusMessage("Requesting camera access...");
-
-    // 1. Explicitly request camera to "prime" the browser permission
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        // Close it immediately so Prism can take over the hardware
-        stream.getTracks().forEach(track => track.stop());
-    } catch (err) {
-        console.warn("[Scanner] Pre-check camera permission failed:", err);
-        // We don't throw here, let Prism try its own way
-    }
-
-    // 2. Wait for SDK and render
+    setStatusMessage("Starting camera system...");
+    
+    // We proceed directly to Prism Render. 
+    // Manual getUserMedia is removed as it can lock the hardware on some mobile browsers.
     waitForSDK(
         sessionInfo.scanId, 
         sessionInfo.securityToken, 
@@ -88,7 +78,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const renderSDK = (prism: any, config: PrismConfig) => {
     if (initializedRef.current || !containerRef.current) return;
     
-    console.log("[Scanner] Rendering Prism SDK...");
+    console.log("[Scanner] Executing Prism.render...");
 
     try {
         prism.render({
@@ -96,11 +86,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             container: containerRef.current
         });
         initializedRef.current = true;
-        // Fade out our loader once render is called
-        setTimeout(() => setIsLoading(false), 2000);
+        
+        // Clear our loading state immediately so the Prism UI can be seen/touched
+        setIsLoading(false);
+        setStatusMessage("");
     } catch (err: any) {
-        console.error("[Scanner] Prism.render failed:", err);
-        setError(`Render Error: ${err.message}`);
+        console.error("[Scanner] Prism.render exception:", err);
+        setError(`Failed to mount scanner: ${err.message}`);
         setIsLoading(false);
     }
   };
@@ -113,20 +105,17 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         mode, 
         apiBaseUrl,
         assetConfigId,
-        translationOverrides: {
-            leveling: { title: "Hold phone vertically" },
-        },
         onSuccess: (data: any) => {
-            console.log("[Scanner] Success Callback:", data);
+            console.log("[Scanner] Success:", data);
             onComplete(data);
         },
         onFailure: (err: any) => {
-            console.error('[Scanner] onFailure Callback:', err);
+            console.error('[Scanner] Failure:', err);
             setError(
                 <div className="text-center px-6">
-                    <Camera className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                    <p className="font-bold text-white mb-2">Camera Error</p>
-                    <p className="text-sm text-zinc-400">{err.message || "Please check camera permissions in your browser settings."}</p>
+                    <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                    <p className="font-bold text-white mb-2">Scanner Error</p>
+                    <p className="text-sm text-zinc-400">{err.message || "Ensure you are in a well-lit area and allowed camera access."}</p>
                 </div>
             );
             setIsLoading(false);
@@ -134,37 +123,44 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         onClose: () => onClose()
     };
 
-    const existingPrism = (window as any).Prism;
-    if (existingPrism) {
-        renderSDK(existingPrism, config);
+    // Try finding Prism from various possible locations (Module export or Window global)
+    const prism = (window as any).Prism || (PrismModule as any).Prism || (PrismModule as any).default?.Prism;
+
+    if (prism) {
+        renderSDK(prism, config);
         return;
     }
 
+    // Listener for late-loading script
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
-        const prism = event.detail.prism;
-        renderSDK(prism, config);
+        const p = event.detail.prism;
+        renderSDK(p, config);
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // Safety check interval
+    // Final safety interval
     const checkInterval = setInterval(() => {
-        const prism = (window as any).Prism;
-        if (prism && !initializedRef.current) {
-            renderSDK(prism, config);
+        const p = (window as any).Prism || (PrismModule as any).Prism;
+        if (p && !initializedRef.current) {
+            renderSDK(p, config);
             clearInterval(checkInterval);
         }
-    }, 1000);
+    }, 500);
 
-    setTimeout(() => clearInterval(checkInterval), 15000);
+    setTimeout(() => {
+        clearInterval(checkInterval);
+        if (!initializedRef.current) {
+            setError("The scanning engine took too long to load. Please refresh.");
+            setIsLoading(false);
+        }
+    }, 15000);
   };
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     startSession();
-    return () => { 
-        document.body.style.overflow = '';
-    };
+    return () => { document.body.style.overflow = ''; };
   }, [retryCount]);
 
   const handleRetry = () => {
@@ -174,7 +170,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans overflow-hidden">
-      {/* Container for Prism SDK - Always on bottom, but visible */}
+      {/* Container for Prism SDK - Needs to be visible for initialization */}
       <div 
         ref={containerRef} 
         id="prism-container"
@@ -183,22 +179,22 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
       {/* Manual Start Gesture Screen */}
       {isReadyToStart && !isLoading && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[40] p-8 text-center animate-in fade-in zoom-in duration-300">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[40] p-8 text-center animate-in fade-in duration-300">
             <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 border border-emerald-500/20">
                 <Camera className="w-10 h-10 text-emerald-500" />
             </div>
             <h2 className="text-2xl font-bold mb-3">Ready to Scan</h2>
-            <p className="text-zinc-400 text-sm mb-10 max-w-xs leading-relaxed">
-                To begin your 3D scan, we need to access your camera. Please click the button below and "Allow" access.
+            <p className="text-zinc-400 text-sm mb-10 max-w-xs">
+                Camera access granted. Click below to initialize the 3D scanning interface.
             </p>
             <button 
                 onClick={handleStartScanner}
-                className="w-full max-w-xs py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+                className="w-full max-w-xs py-5 bg-emerald-600 text-white rounded-2xl font-bold text-lg shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-3 active:scale-[0.98]"
             >
                 <Play className="w-6 h-6 fill-current" />
-                Start Camera
+                Initialize Scanner
             </button>
-            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm font-medium hover:text-white transition-colors">
+            <button onClick={onClose} className="mt-8 text-zinc-500 text-sm hover:text-white transition-colors">
                 Cancel
             </button>
         </div>
@@ -206,12 +202,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
       {/* Loading Overlay */}
       {isLoading && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 z-[50] backdrop-blur-sm transition-opacity duration-500">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 z-[50] backdrop-blur-sm pointer-events-none">
           <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-6" />
-          <div className="text-center space-y-2 px-6">
-            <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Secure Connection Active</p>
-          </div>
+          <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
         </div>
       )}
 
@@ -220,10 +213,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] p-8 text-center">
           <div className="mb-10 w-full flex justify-center">{error}</div>
           <div className="flex flex-col gap-4 w-full max-w-xs">
-            <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform">
+            <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform">
                 <RefreshCcw className="w-5 h-5" /> Try Again
             </button>
-            <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold text-zinc-400">Return to Home</button>
+            <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold text-zinc-400">Cancel</button>
           </div>
         </div>
       )}
