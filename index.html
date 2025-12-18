@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -7,6 +8,8 @@
     <meta property="og:title" content="EmbraceHealth AI Scanner" />
     <meta property="og:description" content="Start your weight loss journey. Use our browser-based AI scanner to capture precise body measurements and receive your full health report." />
     <title>EmbraceHealth AI</title>
+    <!-- Stable Prism CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@prismlabs/web-scan-ui-kit/dist/index.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -26,26 +29,29 @@
       body, html {
         min-height: 100%;
         width: 100%;
-        background-color: #f8fafc;
+        background-color: #020617; /* Darker default for smoother transition to scanner */
         overflow-x: hidden;
+        margin: 0;
+        padding: 0;
       }
+      #root { min-height: 100vh; display: flex; flex-direction: column; }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "@prismlabs/web-scan-ui-kit": "https://aistudiocdn.com/@prismlabs/web-scan-ui-kit@^1.0.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
-    "vite": "https://aistudiocdn.com/vite@^7.2.4",
-    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "jsonwebtoken": "https://aistudiocdn.com/jsonwebtoken@^9.0.2",
-    "buffer": "https://aistudiocdn.com/buffer@^6.0.3",
-    "pg": "https://aistudiocdn.com/pg@^8.16.3",
-    "https": "https://aistudiocdn.com/https@^1.0.0",
-    "crypto": "https://esm.sh/crypto@^1.0.1"
+    "react": "https://esm.run/react@18.2.0",
+    "react-dom/": "https://esm.run/react-dom@18.2.0/",
+    "react/": "https://esm.run/react@18.2.0/",
+    "@prismlabs/web-scan-ui-kit": "https://cdn.jsdelivr.net/npm/@prismlabs/web-scan-ui-kit/dist/index.js",
+    "lucide-react": "https://esm.run/lucide-react@0.344.0",
+    "vite": "https://esm.run/vite@5.1.4",
+    "@vitejs/plugin-react": "https://esm.run/@vitejs/plugin-react@4.2.1",
+    "@google/genai": "https://esm.run/@google/genai@1.30.0",
+    "jsonwebtoken": "https://esm.run/jsonwebtoken@9.0.2",
+    "buffer": "https://esm.run/buffer@6.0.3",
+    "pg": "https://esm.run/pg@8.11.3",
+    "https": "https://esm.run/https-browserify@1.0.0",
+    "crypto": "https://esm.run/crypto-browserify@3.12.0"
   }
 }
 </script>

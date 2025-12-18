@@ -1,10 +1,9 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as PrismModule from '@prismlabs/web-scan-ui-kit';
-
-import { PrismConfig, PrismLoadedEvent } from '../types';
+import { PrismConfig } from '../types';
 import { initScanSession } from '../services/api';
-import { Loader2, AlertTriangle, RefreshCcw, Camera, Play } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCcw, Camera } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -17,208 +16,124 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isReadyToStart, setIsReadyToStart] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("Initializing...");
-  const [error, setError] = useState<React.ReactNode | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [sessionInfo, setSessionInfo] = useState<any>(null);
-  const [retryCount, setRetryCount] = useState<number>(0);
+  const [retryKey, setRetryKey] = useState<number>(0);
 
-  // 1. Inject Prism CSS dynamically if missing
+  // Phase 1: Get Session from Backend
   useEffect(() => {
-    const cssId = 'prism-ui-css';
-    if (!document.getElementById(cssId)) {
-      const link = document.createElement('link');
-      link.id = cssId;
-      link.rel = 'stylesheet';
-      // Fallback to a common CDN path for the CSS
-      link.href = 'https://aistudiocdn.com/@prismlabs/web-scan-ui-kit@^1.0.0/dist/index.css';
-      document.head.appendChild(link);
-      console.log("[Scanner] Injected Prism CSS");
-    }
-  }, []);
-
-  const startSession = async () => {
-    console.log("[Scanner] Phase 1: Requesting session...");
-    setIsLoading(true);
-    setIsReadyToStart(false);
-    setError(null);
-    setStatusMessage("Connecting to secure server...");
-
-    try {
-      const getDeviceConfig = (): string => {
-        const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera || '';
-        if (/iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream) return 'IPHONE_SCANNER';
-        return 'ANDROID_SCANNER';
-      };
-
-      const sessionData = await initScanSession(getDeviceConfig());
-      console.log("[Scanner] Phase 1 Success:", sessionData.scanId);
-      
-      setSessionInfo(sessionData);
-      setIsReadyToStart(true);
-      setIsLoading(false);
-    } catch (err: any) {
-      console.error("[Scanner] Phase 1 Error:", err);
-      setIsLoading(false);
-      setError(
-          <div className="text-center w-full max-w-sm px-6">
-              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-              <p className="font-bold text-slate-100 mb-2 text-xl">Initialization Failed</p>
-              <p className="text-sm text-zinc-400 mb-6">{err.message}</p>
-          </div>
-      );
-    }
-  };
-
-  const handleStartScanner = () => {
-    console.log("[Scanner] Phase 2: Starting Scanner process");
-    if (!sessionInfo) return;
-    
-    // CRITICAL FIX: Hide the "Ready" screen immediately so it doesn't cover the scanner
-    setIsReadyToStart(false);
-    setIsLoading(true);
-    setStatusMessage("Initializing 3D scanning engine...");
-    
-    waitForSDK(
-        sessionInfo.scanId, 
-        sessionInfo.securityToken, 
-        sessionInfo.apiBaseUrl, 
-        sessionInfo.assetConfigId, 
-        sessionInfo.mode
-    );
-  };
-
-  const findPrismInstance = () => {
-    const fromWindow = (window as any).Prism;
-    const fromModuleProp = (PrismModule as any).Prism;
-    const fromModuleDefault = (PrismModule as any).default;
-    const fromModuleDefaultPrism = (PrismModule as any).default?.Prism;
-
-    const instance = fromWindow || fromModuleProp || fromModuleDefaultPrism || fromModuleDefault;
-    
-    if (instance) {
-      console.log("[Scanner] Found SDK Instance. Structure:");
-      console.dir(instance);
-    }
-    
-    return instance;
-  };
-
-  const renderSDK = (prism: any, config: PrismConfig) => {
-    if (initializedRef.current || !containerRef.current) return;
-    
-    console.log("[Scanner] Phase 4: Attempting render...");
-
-    try {
-        if (typeof prism.render !== 'function') {
-            const keys = Object.keys(prism).join(', ');
-            throw new Error(`SDK object found but missing .render(). Keys: ${keys}`);
-        }
-
-        prism.render({
-            ...config,
-            container: containerRef.current
-        });
-        
-        initializedRef.current = true;
-        console.log("[Scanner] Phase 5: render() executed.");
-        
+    const startSession = async () => {
+      setIsLoading(true);
+      setError(null);
+      setStatusMessage("Connecting...");
+      try {
+        const userAgent = navigator.userAgent || '';
+        const device = /iPad|iPhone|iPod/.test(userAgent) ? 'IPHONE_SCANNER' : 'ANDROID_SCANNER';
+        const data = await initScanSession(device);
+        setSessionInfo(data);
+        setIsReadyToStart(true);
         setIsLoading(false);
-        setStatusMessage("");
-    } catch (err: any) {
-        console.error("[Scanner] Phase 4 Error:", err);
-        setError(`Scanner mounting failed: ${err.message}`);
+      } catch (err: any) {
+        setError(err.message || "Connection failed");
         setIsLoading(false);
-    }
-  };
-
-  const waitForSDK = (scanId: string, securityToken: string, apiBaseUrl: string, assetConfigId: string, mode: string) => {
-    const config: PrismConfig = {
-        apiKey: "token_based_auth", 
-        scanId, 
-        token: securityToken,
-        mode, 
-        apiBaseUrl,
-        assetConfigId,
-        onSuccess: (data: any) => onComplete(data),
-        onFailure: (err: any) => {
-            setError(<p className="text-sm text-zinc-400">{err.message || "Scanner failure."}</p>);
-            setIsLoading(false);
-        },
-        onClose: () => onClose()
+      }
     };
+    startSession();
+  }, [retryKey]);
 
-    const prism = findPrismInstance();
-    if (prism && typeof prism.render === 'function') {
-        renderSDK(prism, config);
-        return;
-    }
-
+  // Phase 2: User clicks start
+  const handleStartScanner = () => {
+    if (!sessionInfo) return;
+    setIsReadyToStart(false); // Hide the "Ready" screen immediately
+    setIsLoading(true);
+    setStatusMessage("Starting Camera...");
+    
+    // Discovery Loop
     let attempts = 0;
     const checkInterval = setInterval(() => {
-        attempts++;
-        const p = findPrismInstance();
-        if (p && typeof p.render === 'function') {
-            renderSDK(p, config);
-            clearInterval(checkInterval);
-        }
-    }, 300);
-
-    setTimeout(() => {
+      attempts++;
+      
+      // Look for the Prism object anywhere it might be hiding
+      const prism = (window as any).Prism || (PrismModule as any).Prism || (PrismModule as any).default || PrismModule;
+      
+      if (prism && typeof prism.render === 'function') {
         clearInterval(checkInterval);
-        if (!initializedRef.current) {
-            console.error("[Scanner] Timeout: Could not find render function.");
-            setError("The scanning engine took too long to load. Please try refreshing.");
-            setIsLoading(false);
+        try {
+          prism.render({
+            apiKey: "token_based_auth",
+            scanId: sessionInfo.scanId,
+            token: sessionInfo.securityToken,
+            mode: sessionInfo.mode,
+            apiBaseUrl: sessionInfo.apiBaseUrl,
+            assetConfigId: sessionInfo.assetConfigId,
+            container: containerRef.current,
+            onSuccess: (data: any) => onComplete(data),
+            onFailure: (err: any) => {
+              setError(err.message || "Scanner error");
+              setIsLoading(false);
+            },
+            onClose: () => onClose()
+          });
+          initializedRef.current = true;
+          setIsLoading(false);
+        } catch (e: any) {
+          setError(`Mount failed: ${e.message}`);
+          setIsLoading(false);
         }
-    }, 12000);
+      } else if (attempts > 30) { // 3 seconds total
+        clearInterval(checkInterval);
+        setError("Scanning engine not found. Please refresh.");
+        setIsLoading(false);
+      }
+    }, 100);
   };
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    startSession();
-    return () => { document.body.style.overflow = ''; };
-  }, [retryCount]);
-
   return (
-    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center font-sans overflow-hidden">
-      {/* Container - Ensure high z-index when active */}
+    <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
+      {/* Target for Prism SDK */}
       <div 
         ref={containerRef} 
         id="prism-container"
-        className={`absolute inset-0 w-full h-full bg-black ${initializedRef.current ? 'z-30' : 'z-10'}`} 
+        className="absolute inset-0 w-full h-full bg-black z-10" 
       />
 
-      {/* Manual Start Gesture Screen */}
+      {/* Start UI */}
       {isReadyToStart && !isLoading && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[40] p-8 text-center animate-in fade-in">
-            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 border border-emerald-500/20">
-                <Camera className="w-10 h-10 text-emerald-500" />
+        <div className="relative z-[60] flex flex-col items-center p-8 text-center bg-slate-950/50 backdrop-blur-md rounded-3xl border border-white/10 max-w-xs mx-auto animate-in fade-in zoom-in duration-300">
+            <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center mb-6">
+                <Camera className="w-8 h-8 text-emerald-400" />
             </div>
-            <h2 className="text-2xl font-bold mb-3">Ready to Scan</h2>
-            <p className="text-zinc-400 text-sm mb-10 max-w-xs">Click below to start the 3D scanning interface.</p>
+            <h2 className="text-xl font-bold mb-2">Ready to Scan</h2>
+            <p className="text-zinc-400 text-sm mb-8 leading-relaxed">Position yourself in a clear space before starting.</p>
             <button 
                 onClick={handleStartScanner}
-                className="w-full max-w-xs py-5 bg-emerald-600 text-white rounded-2xl font-bold text-lg active:scale-95 transition-transform"
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
             >
                 Initialize Scanner
             </button>
-            <button onClick={onClose} className="mt-8 text-zinc-500 text-sm">Cancel</button>
+            <button onClick={onClose} className="mt-4 text-zinc-500 text-xs hover:underline">Cancel</button>
         </div>
       )}
 
-      {/* Loading Overlay */}
+      {/* Loader */}
       {isLoading && !error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 z-[50] backdrop-blur-sm pointer-events-none transition-opacity">
-          <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-6" />
-          <p className="text-zinc-100 text-lg font-semibold">{statusMessage}</p>
+        <div className="relative z-[70] flex flex-col items-center pointer-events-none">
+          <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
+          <p className="text-zinc-400 text-sm font-medium tracking-wide">{statusMessage}</p>
         </div>
       )}
 
-      {/* Error Overlay */}
+      {/* Error */}
       {error && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[60] p-8 text-center">
-          <div className="mb-10 text-white">{error}</div>
-          <button onClick={() => setRetryCount(prev => prev + 1)} className="w-full max-w-xs py-4 bg-emerald-600 rounded-xl font-bold">Try Again</button>
-          <button onClick={onClose} className="mt-4 text-zinc-500">Cancel</button>
+        <div className="relative z-[80] flex flex-col items-center p-8 text-center max-w-xs mx-auto">
+          <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+          <p className="text-white font-semibold mb-6">{error}</p>
+          <div className="flex flex-col gap-3 w-full">
+            <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold flex items-center justify-center gap-2">
+                <RefreshCcw className="w-4 h-4" /> Try Again
+            </button>
+            <button onClick={onClose} className="w-full py-3 bg-zinc-900 text-zinc-500 rounded-xl font-medium">Cancel</button>
+          </div>
         </div>
       )}
     </div>
