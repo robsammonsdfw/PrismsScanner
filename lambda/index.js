@@ -8,10 +8,23 @@ import {
 } from './services/databaseService.mjs';
 import { Buffer } from 'buffer';
 
+// Use a persistent agent to keep connections alive
+const agent = new https.Agent({
+    keepAlive: true,
+    timeout: 30000, 
+    maxSockets: 100
+});
+
 // Helper for HTTPS requests
 async function prismRequest(options, postData = null) {
     return new Promise((resolve, reject) => {
-        const req = https.request(options, (res) => {
+        const requestOptions = {
+            ...options,
+            agent: agent,
+            timeout: 25000 
+        };
+
+        const req = https.request(requestOptions, (res) => {
             let data = '';
             res.on('data', (chunk) => { data += chunk; });
             res.on('end', () => {
@@ -28,10 +41,14 @@ async function prismRequest(options, postData = null) {
             });
         });
 
-        req.on('error', (e) => reject(e));
+        req.on('error', (e) => {
+            console.error(`[Prism Request Error]:`, e.message);
+            reject(e);
+        });
+
         req.on('timeout', () => {
             req.destroy();
-            reject(new Error('Connection timed out'));
+            reject(new Error('Connection timed out.'));
         });
 
         if (postData) {
@@ -126,23 +143,21 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
     const assetConfigId = "ee651a9e-6de1-4621-a5c9-5d31ca874718"; 
     const prismUserToken = `user_${userId}`;
 
+    // CRITICAL: Must use 'application/json;v=1' for routing to work
     const defaultRequestOptions = {
         hostname: hostname,
         port: 443,
         headers: {
             'Authorization': `Bearer ${apiKey.trim()}`,
             'Content-Type': 'application/json',
-            'Accept': 'application/json', // Let Prism decide the best version
-            'User-Agent': 'EmbraceHealth-Scanner/1.1'
-        },
-        timeout: 15000
+            'Accept': 'application/json;v=1',
+            'User-Agent': 'EmbraceHealth-Scanner/1.3'
+        }
     };
 
     try {
-        console.log(`[Prism] Ensuring User state for ${prismUserToken}`);
+        console.log(`[Prism] Initializing User: ${prismUserToken}`);
         
-        // Always attempt to create or update the user to ensure ToS is accepted.
-        // Prism "POST /users" is often used as an idempotent "ensure" call.
         const userPayload = {
             token: prismUserToken,
             email: userEmail || 'user@example.com',
@@ -153,32 +168,26 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             researchConsent: true,
             termsOfService: { 
                 accepted: true, 
-                version: "2024-01-01", // Use a generic date string or "1"
+                version: "2024-01-01",
                 acceptedAt: new Date().toISOString()
             }
         };
 
+        // 1. Create/Verify User
         const userRes = await prismRequest({
             ...defaultRequestOptions,
             method: 'POST',
             path: '/users'
         }, userPayload);
 
-        // If 409, user already exists. We should update them to be safe.
-        if (userRes.status === 409 || userRes.ok) {
-            console.log(`[Prism] User ${prismUserToken} verified/created. Updating ToS...`);
-            await prismRequest({
-                ...defaultRequestOptions,
-                method: 'PUT',
-                path: `/users/${prismUserToken}`
-            }, userPayload);
-        } else {
-            console.error("[Prism] User setup failed:", userRes.data);
-            return { statusCode: 502, headers, body: JSON.stringify({ error: "User setup failed", details: userRes.data }) };
+        // 409 means user already exists, which is fine
+        if (userRes.status !== 409 && !userRes.ok) {
+            console.error("[Prism] User Provisioning Failed:", userRes.data);
+            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism User Setup Failed", details: userRes.data }) };
         }
 
-        // 2. Create Session
-        console.log(`[Prism] Creating session for ${prismUserToken}`);
+        // 2. Create Scan Session
+        console.log(`[Prism] Creating Scan Session...`);
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) {}
 
@@ -192,27 +201,21 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             deviceConfigName: body.deviceConfigName || 'ANDROID_SCANNER'
         });
 
-        console.log(`[Prism] Scan response keys: ${Object.keys(scanRes.data).join(', ')}`);
-
         if (!scanRes.ok) {
-            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session creation failed", details: scanRes.data }) };
+            console.error("[Prism] Scan Session Creation Failed:", scanRes.data);
+            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session Failed", details: scanRes.data }) };
         }
 
-        // Try all known token fields
-        const securityToken = 
-            scanRes.data.securityToken || 
-            scanRes.data.token || 
-            scanRes.data.clientToken || 
-            scanRes.data.sessionToken;
+        // Extract security token (Prism API uses 'token' or 'securityToken' depending on version)
+        const securityToken = scanRes.data.token || scanRes.data.securityToken || scanRes.data.clientToken;
 
         if (!securityToken) {
-            console.error("[Prism] No token in response:", scanRes.data);
+            console.error("[Prism] Response missing security token:", scanRes.data);
             return { 
                 statusCode: 502, 
                 headers, 
                 body: JSON.stringify({ 
                     error: "No security token returned", 
-                    message: "The Prism API created the scan but did not provide an access token. Ensure your account is active.",
                     details: scanRes.data 
                 }) 
             };
@@ -231,11 +234,14 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
         };
 
     } catch (e) {
-        console.error("[Prism] Handshake error:", e);
+        console.error("[Prism] Handshake Failed:", e.message);
         return { 
             statusCode: 502, 
             headers, 
-            body: JSON.stringify({ error: "Connection to Prism Labs failed", message: e.message }) 
+            body: JSON.stringify({ 
+                error: "Prism Labs Unreachable", 
+                message: e.message
+            }) 
         };
     }
 }

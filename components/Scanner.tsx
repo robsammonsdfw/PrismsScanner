@@ -4,7 +4,7 @@ import '@prismlabs/web-scan-ui-kit';
 
 import { PrismConfig, PrismLoadedEvent } from '../types';
 import { initScanSession } from '../services/api';
-import { Loader2, AlertTriangle, LogOut, RefreshCcw } from 'lucide-react';
+import { Loader2, AlertTriangle, LogOut, RefreshCcw, WifiOff } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -37,8 +37,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       const deviceConfigName = getDeviceConfig();
       const sessionData = await initScanSession(deviceConfigName);
       
-      console.log("[Scanner] Backend API response received:", sessionData);
-
       const { scanId, securityToken, apiBaseUrl, assetConfigId, mode } = sessionData;
       
       if (!scanId || !securityToken) {
@@ -51,19 +49,38 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       setIsLoading(false);
       
       const errorMessage = err.message || "Connection failed";
+      const isTimeout = errorMessage.toLowerCase().includes('time') || errorMessage.toLowerCase().includes('reach');
       
       if (errorMessage.toLowerCase().includes('expired') || errorMessage.includes('401')) {
           setIsAuthError(true);
           setError("Your session has expired. Please log in again.");
       } else {
           setError(
-              <div className="text-center">
-                  <p className="font-bold text-red-400 mb-2 text-xl">Initialization Failed</p>
-                  <p className="text-sm opacity-80 mb-4 max-w-xs mx-auto">
+              <div className="text-center w-full max-w-sm">
+                  {isTimeout ? (
+                      <WifiOff className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                  ) : (
+                      <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                  )}
+                  <p className="font-bold text-slate-100 mb-2 text-xl">
+                    {isTimeout ? "Network Timeout" : "Initialization Failed"}
+                  </p>
+                  <p className="text-sm text-zinc-400 mb-6 leading-relaxed">
                     {errorMessage}
                   </p>
+                  
+                  {isTimeout && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl text-left mb-6">
+                        <p className="text-[10px] uppercase font-bold text-emerald-400 mb-1 tracking-wider">Infrastructure Tip</p>
+                        <p className="text-xs text-emerald-100/70">
+                            Check your <strong>AWS Lambda Configuration</strong>. If it is inside a <strong>VPC</strong>, ensure it has a <strong>NAT Gateway</strong> to reach the internet.
+                        </p>
+                      </div>
+                  )}
+
                   {err.details && (
-                      <div className="bg-black/40 p-3 rounded-lg text-[10px] text-left overflow-auto max-h-32 font-mono text-zinc-400">
+                      <div className="bg-black/60 p-4 rounded-xl text-[10px] text-left overflow-auto max-h-40 font-mono text-zinc-500 border border-white/5">
+                          <p className="mb-2 text-zinc-400 border-b border-white/10 pb-1 italic uppercase">Technical Details:</p>
                           {JSON.stringify(err.details, null, 2)}
                       </div>
                   )}
@@ -75,8 +92,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   const renderSDK = (prism: any, config: PrismConfig) => {
     if (initializedRef.current) return;
-    console.log("[Scanner] Executing prism.render(config)");
-    
     try {
         prism.render(config);
         initializedRef.current = true;
@@ -105,7 +120,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             leveling: { title: "Hold phone vertically" },
         },
         onSuccess: (data: any) => {
-            console.log('[Scanner] onSuccess:', data);
             onComplete(data);
         },
         onFailure: (err: any) => {
@@ -117,29 +131,25 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     const existingPrism = (window as any).Prism;
     if (existingPrism) {
-        console.log("[Scanner] Prism already on window, rendering...");
         renderSDK(existingPrism, config);
         return;
     }
 
     const handlePrismLoaded = (event: PrismLoadedEvent) => {
-        console.log("[Scanner] Event onPrismLoaded received");
         const prism = event.detail.prism;
         renderSDK(prism, config);
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded);
     
-    // Safety fallback
     setTimeout(() => {
         if (!initializedRef.current && !error) {
             const fallbackPrism = (window as any).Prism;
             if (fallbackPrism) {
-                console.log("[Scanner] Fallback: Found Prism on window after delay");
                 renderSDK(fallbackPrism, config);
             }
         }
-    }, 2000);
+    }, 3000);
   };
 
   useEffect(() => {
@@ -167,19 +177,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
       {error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 z-[70] p-8 text-center overflow-y-auto">
-          <div className="bg-red-500/10 p-6 rounded-full mb-8 shrink-0">
-            {isAuthError ? <LogOut className="w-12 h-12 text-red-500" /> : <AlertTriangle className="w-12 h-12 text-amber-500" />}
-          </div>
-          <div className="mb-10 w-full">{error}</div>
+          <div className="mb-10 w-full flex justify-center">{error}</div>
           <div className="flex flex-col gap-4 w-full max-w-xs shrink-0">
             {isAuthError ? (
               <button onClick={() => window.location.href = 'https://main.embracehealth.ai'} className="w-full py-4 bg-emerald-600 rounded-xl font-bold">Log In Again</button>
             ) : (
               <>
-                <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2">
+                <button onClick={handleRetry} className="w-full py-4 bg-emerald-600 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform">
                   <RefreshCcw className="w-5 h-5" /> Try Again
                 </button>
-                <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold">Return to Home</button>
+                <button onClick={onClose} className="w-full py-4 bg-zinc-800 rounded-xl font-semibold opacity-60 hover:opacity-100">Return to Home</button>
               </>
             )}
           </div>
