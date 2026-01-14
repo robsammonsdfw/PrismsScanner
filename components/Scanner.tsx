@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PrismConfig } from '../types';
 import { initScanSession } from '../services/api';
-import { Loader2, AlertTriangle, RefreshCcw, Camera, CheckCircle2 } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCcw, Camera, CheckCircle2, LogOut } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -47,8 +47,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       document.body.appendChild(script);
     } else {
         console.log("[Scanner] Script already present.");
-        // If script is already there, we might have missed the event. 
-        // We can't easily check a global var based on their info, but we hope the event fires late enough or we reload.
     }
 
     return () => {
@@ -67,7 +65,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         setSessionInfo(data);
       } catch (err: any) {
         console.error(err);
-        setError(err.message || "Failed to connect to scanning server.");
+        // If it's a redirecting error, we can show a specific message
+        if (err.message.includes("Redirecting")) {
+            setError("Session expired. Redirecting to login...");
+        } else {
+            setError(err.message || "Failed to connect to scanning server.");
+        }
       }
     };
     fetchSession();
@@ -102,13 +105,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         onClose: () => onClose()
       });
       initializedRef.current = true;
-      // Note: We don't set isLoading(false) here because the SDK takes over the UI
     } catch (e: any) {
       console.error("[Scanner] Render Exception:", e);
       setError(`Engine Error: ${e.message}`);
       setIsScanning(false);
     }
   };
+
+  const isAuthError = error?.includes("Session expired");
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
@@ -167,14 +171,25 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       {/* Error View */}
       {error && (
         <div className="relative z-[80] flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
-          <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+          {isAuthError ? (
+              <LogOut className="w-12 h-12 text-zinc-400 mb-4" />
+          ) : (
+              <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+          )}
+          
           <p className="text-white font-semibold mb-6">{error}</p>
-          <div className="flex flex-col gap-3 w-full">
-            <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold flex items-center justify-center gap-2">
-                <RefreshCcw className="w-4 h-4" /> Try Again
-            </button>
-            <button onClick={onClose} className="w-full py-3 bg-zinc-900 text-zinc-500 rounded-xl font-medium">Cancel</button>
-          </div>
+          
+          {!isAuthError && (
+              <div className="flex flex-col gap-3 w-full">
+                <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold flex items-center justify-center gap-2">
+                    <RefreshCcw className="w-4 h-4" /> Try Again
+                </button>
+                <button onClick={onClose} className="w-full py-3 bg-zinc-900 text-zinc-500 rounded-xl font-medium">Cancel</button>
+              </div>
+          )}
+          {isAuthError && (
+              <p className="text-xs text-zinc-500">Please wait while we reconnect you...</p>
+          )}
         </div>
       )}
     </div>

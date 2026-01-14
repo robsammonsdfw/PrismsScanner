@@ -19,6 +19,15 @@ const getCleanUrl = (base: string, endpoint: string) => {
     return `${cleanBase}${cleanEndpoint}`;
 };
 
+const handleAuthError = () => {
+    console.warn("[API] Session expired or unauthorized. Redirecting to login...");
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    // Allow a brief moment for any UI cleanup if needed, but essentially redirect immediately
+    setTimeout(() => {
+        window.location.href = 'https://main.embracehealth.ai';
+    }, 1000);
+};
+
 export const initScanSession = async (deviceConfigName?: string) => {
     const endpoint = getCleanUrl(SCANNER_API_URL, "init"); 
 
@@ -35,6 +44,11 @@ export const initScanSession = async (deviceConfigName?: string) => {
         });
 
         console.log(`[API] Response status: ${response.status} ${response.statusText}`);
+
+        if (response.status === 401) {
+            handleAuthError();
+            throw new Error("Session expired. Redirecting to login...");
+        }
 
         if (!response.ok) {
             const errorBody = await response.json().catch(() => ({}));
@@ -68,6 +82,11 @@ export const saveBodyScan = async (data: any) => {
     body: JSON.stringify(data)
   });
   
+  if (response.status === 401) {
+      handleAuthError();
+      throw new Error("Session expired. Redirecting to login...");
+  }
+
   if (!response.ok) throw new Error('Failed to save scan results');
   return response.json();
 };
@@ -79,6 +98,11 @@ export const getScanHistory = async () => {
     method: 'GET',
     headers: getHeaders()
   });
+
+  if (response.status === 401) {
+      handleAuthError();
+      throw new Error("Session expired. Redirecting to login...");
+  }
 
   if (!response.ok) throw new Error('Failed to fetch scan history');
   return response.json();
