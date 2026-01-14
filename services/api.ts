@@ -50,6 +50,10 @@ export const initScanSession = async (deviceConfigName?: string) => {
         if (!response.ok) {
             const errorBody = await response.json().catch(() => ({}));
             console.error("[API] Error body:", errorBody);
+            // Handle 404 specially as it might indicate backend code mismatch
+            if (response.status === 404) {
+                 throw new Error("Scanner service unavailable. Please check backend deployment.");
+            }
             throw new Error(errorBody.error || errorBody.message || `Server Error (${response.status})`);
         }
 
