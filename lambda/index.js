@@ -88,21 +88,31 @@ export const handler = async (event) => {
         }
 
         if (!JWT_SECRET) {
-            return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "Missing JWT_SECRET" }) };
+            console.error("Critical: JWT_SECRET environment variable is missing.");
+            return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: "Configuration Error: Missing JWT_SECRET" }) };
         }
 
         const authHeader = requestHeaders['authorization'] || requestHeaders['Authorization'];
         const token = authHeader?.split(' ')[1];
 
         if (!token) {
-            return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized: No token' })};
+            return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized: No token provided' })};
         }
 
         let decodedUser;
         try {
             decodedUser = jwt.verify(token, JWT_SECRET);
         } catch (err) {
-            return { statusCode: 401, headers: corsHeaders, body: JSON.stringify({ error: 'Unauthorized: Invalid token' })};
+            console.error("Token verification failed:", err.message);
+            return { 
+                statusCode: 401, 
+                headers: corsHeaders, 
+                body: JSON.stringify({ 
+                    error: 'Unauthorized: Invalid token', 
+                    details: err.message, // Helps debug (e.g. "invalid signature", "jwt expired")
+                    receivedToken: token.substring(0, 15) + "..." // Log partial token for debug
+                })
+            };
         }
 
         const userId = decodedUser.userId;

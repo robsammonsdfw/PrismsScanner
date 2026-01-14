@@ -65,9 +65,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         setSessionInfo(data);
       } catch (err: any) {
         console.error(err);
-        // If it's a redirecting error, we can show a specific message
-        if (err.message.includes("Redirecting")) {
-            setError("Session expired. Redirecting to login...");
+        if (err.message.includes("Session expired")) {
+            setError("Session expired");
         } else {
             setError(err.message || "Failed to connect to scanning server.");
         }
@@ -112,7 +111,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     }
   };
 
-  const isAuthError = error?.includes("Session expired");
+  const isAuthError = error === "Session expired";
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
@@ -177,7 +176,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
               <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
           )}
           
-          <p className="text-white font-semibold mb-6">{error}</p>
+          <p className="text-white font-semibold mb-6">{isAuthError ? "For security, your session has timed out." : error}</p>
           
           {!isAuthError && (
               <div className="flex flex-col gap-3 w-full">
@@ -188,7 +187,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
               </div>
           )}
           {isAuthError && (
-              <p className="text-xs text-zinc-500">Please wait while we reconnect you...</p>
+               <div className="flex flex-col gap-3 w-full">
+                   <button 
+                     onClick={() => window.location.href = 'https://main.embracehealth.ai'}
+                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-colors"
+                   >
+                     Log In Again
+                   </button>
+               </div>
           )}
         </div>
       )}
