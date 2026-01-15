@@ -97,13 +97,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         try {
           console.log("[Scanner] Calling prism.render()...");
           
-          if (containerRef.current) {
-              // Safety clean
-              containerRef.current.innerHTML = '';
+          // Ensure the element is clean
+          const containerId = "prism-container";
+          const el = document.getElementById(containerId);
+          if (el) {
+              el.innerHTML = '';
+          } else {
+              throw new Error("Scanner container not found in DOM");
           }
-
-          // Use the DIRECT element ref, not ID string, to ensure SDK finds it immediately
-          const containerElement = containerRef.current;
 
           prismInstance.render({
             apiKey: "token_based_auth", 
@@ -112,8 +113,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             mode: sessionInfo.mode,
             apiBaseUrl: sessionInfo.apiBaseUrl,
             assetConfigId: sessionInfo.assetConfigId,
-            container: containerElement, // Pass the actual DOM node
-            // screen: "capture", // DISABLED: Let Prism load the default landing page first to ensure engine is ready
+            container: containerId, // Passed as STRING ID to prevent circular JSON error
+            screen: "capture", // Direct to camera
             onSuccess: (data: any) => onComplete(data),
             onFailure: (err: any) => {
               console.error("[Scanner] Failure Callback:", err);
