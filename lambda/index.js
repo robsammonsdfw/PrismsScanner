@@ -108,10 +108,12 @@ export const handler = async (event) => {
     const requestHeaders = event.headers || {};
     const origin = requestHeaders.origin || requestHeaders.Origin;
     
-    let accessControlAllowOrigin = FRONTEND_URL || (allowedOrigins.length > 0 ? allowedOrigins[0] : '*');
-
+    // Default to the origin sending the request if it's in our allowed list, otherwise permissive for dev/debug
+    let accessControlAllowOrigin = '*';
     if (origin && allowedOrigins.includes(origin)) {
         accessControlAllowOrigin = origin;
+    } else if (FRONTEND_URL) {
+        accessControlAllowOrigin = FRONTEND_URL; // Fallback to primary env
     }
 
     const headers = {
@@ -196,8 +198,8 @@ export const handler = async (event) => {
         }
 
         // FOOD APP ROUTES
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-
+        // Initialize Gemini only when needed to prevent crashes if API key is missing for other routes
+        
         if (resource === 'meal-log') {
             return await handleMealLogRequest(event, headers, method, pathParts);
         }
@@ -214,9 +216,11 @@ export const handler = async (event) => {
              return await handleGroceryListRequest(event, headers, method, ['grocery-lists', ...pathParts.slice(1)]);
         }
         if (resource === 'analyze-image' || resource === 'analyze-image-recipes') {
+            const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
             return await handleGeminiRequest(event, ai, headers);
         }
         if (resource === 'get-meal-suggestions') {
+            const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
             return await handleMealSuggestionRequest(event, ai, headers);
         }
         if (resource === 'rewards') {
