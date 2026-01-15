@@ -332,7 +332,8 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session Failed", details: scanRes.data }) };
         }
 
-        const finalToken = scanRes.data.token || scanRes.data.securityToken || scanRes.data.clientToken || securityToken;
+        // IMPROVED: Prioritize 'clientToken' or 'token' from Scan response over User securityToken
+        const finalToken = scanRes.data.clientToken || scanRes.data.token || scanRes.data.securityToken || securityToken;
 
         if (!finalToken) {
             return { statusCode: 502, headers, body: JSON.stringify({ error: "No security token returned by Prism API" }) };

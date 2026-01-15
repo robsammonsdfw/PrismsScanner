@@ -11,7 +11,9 @@ interface ScannerProps {
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const initializedRef = useRef<boolean>(false);
+  
+  // STATE CHANGE: Use state instead of ref to trigger re-renders
+  const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
   
   // State
   const [sessionInfo, setSessionInfo] = useState<any>(null);
@@ -23,7 +25,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   // 1. Load Prism SDK Script & Listen for Event
   useEffect(() => {
-    // Handler for the custom event
     const handlePrismLoaded = (event: CustomEvent) => {
       console.log("[Scanner] Prism SDK Event Received", event.detail);
       if (event.detail && event.detail.prism) {
@@ -33,7 +34,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
 
-    // Inject Script if not present
     const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
     let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement;
     
@@ -46,13 +46,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       script.onerror = () => setError("Failed to load 3D Scanning Engine. Check your connection.");
       document.body.appendChild(script);
     } else {
-        // If script is already loaded, check if window.prism exists (race condition handling)
         // @ts-ignore
         if (window.prism) {
             // @ts-ignore
             setPrismInstance(window.prism);
-        } else {
-            console.log("[Scanner] Script present, waiting for event...");
         }
     }
 
@@ -82,13 +79,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     fetchSession();
   }, [retryKey]);
 
-  // Combined Loading State
   const isReady = !!sessionInfo && !!prismInstance;
 
   // 3. Start The Scanner
   const handleStartScanner = () => {
     if (!isReady) return;
-    if (initializedRef.current) return; // Prevent double init
+    if (isScannerActive) return; // Prevent double init
 
     setIsScanning(true);
     setStatusMessage("Starting 3D Camera...");
@@ -96,8 +92,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     try {
       console.log("[Scanner] Calling prism.render()...");
       
-      // CRITICAL FIX: We pass the string ID "prism-container" instead of the DOM element.
-      // Passing the DOM element causes the SDK to crash when it tries to JSON.stringify the config.
+      // CRITICAL: Passing string ID "prism-container" prevents circular JSON errors
       prismInstance.render({
         apiKey: "token_based_auth", 
         scanId: sessionInfo.scanId,
@@ -105,25 +100,29 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         mode: sessionInfo.mode,
         apiBaseUrl: sessionInfo.apiBaseUrl,
         assetConfigId: sessionInfo.assetConfigId,
-        container: "prism-container", // <--- ID STRING ONLY
+        container: "prism-container",
+        screen: "capture", // Explicitly request capture screen
         onSuccess: (data: any) => onComplete(data),
         onFailure: (err: any) => {
           console.error("[Scanner] Failure Callback:", err);
           setError(err.message || "Scan failed. Please try again.");
           setIsScanning(false);
-          initializedRef.current = false;
+          setIsScannerActive(false);
         },
         onClose: () => {
             console.log("[Scanner] Closed by user");
             onClose();
         }
       });
-      initializedRef.current = true;
+      
+      // Update state to HIDE the loading UI and SHOW the scanner canvas
+      setIsScannerActive(true);
+
     } catch (e: any) {
       console.error("[Scanner] Render Exception:", e);
       setError(`Engine Error: ${e.message}`);
       setIsScanning(false);
-      initializedRef.current = false;
+      setIsScannerActive(false);
     }
   };
 
@@ -131,15 +130,20 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
-      {/* Target for Prism SDK - ID MUST MATCH THE 'container' STRING PASSED ABOVE */}
+      
+      {/* 
+         Target for Prism SDK.
+         z-index logic: When active, it jumps to z-50 to be visible.
+         When inactive, it is z-0 to sit behind the UI.
+      */}
       <div 
         id="prism-container"
         ref={containerRef}
-        className={`absolute inset-0 w-full h-full bg-black ${initializedRef.current ? 'z-50' : 'z-10'}`} 
+        className={`absolute inset-0 w-full h-full bg-black transition-all duration-500 ${isScannerActive ? 'z-50 opacity-100' : 'z-0 opacity-0'}`} 
       />
 
-      {/* Preparation UI (Before Start) */}
-      {!initializedRef.current && !error && (
+      {/* Preparation UI (Before Start) - Hides when isScannerActive is true */}
+      {!isScannerActive && !error && (
         <div className="relative z-[60] flex flex-col items-center p-8 text-center bg-slate-900/90 backdrop-blur-xl rounded-[2rem] border border-white/10 max-w-sm mx-auto animate-in fade-in zoom-in-95 duration-300 shadow-2xl">
             
             <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
