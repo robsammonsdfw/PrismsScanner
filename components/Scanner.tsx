@@ -102,6 +102,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
               containerRef.current.innerHTML = '';
           }
 
+          // Use the DIRECT element ref, not ID string, to ensure SDK finds it immediately
+          const containerElement = containerRef.current;
+
           prismInstance.render({
             apiKey: "token_based_auth", 
             scanId: sessionInfo.scanId,
@@ -109,8 +112,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             mode: sessionInfo.mode,
             apiBaseUrl: sessionInfo.apiBaseUrl,
             assetConfigId: sessionInfo.assetConfigId,
-            container: "prism-container", // ID string to prevent circular errors
-            screen: "capture", // Jump directly to camera
+            container: containerElement, // Pass the actual DOM node
+            // screen: "capture", // DISABLED: Let Prism load the default landing page first to ensure engine is ready
             onSuccess: (data: any) => onComplete(data),
             onFailure: (err: any) => {
               console.error("[Scanner] Failure Callback:", err);
@@ -128,7 +131,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           setError(`Engine Error: ${e.message}`);
           setIsScanning(false);
         }
-    }, 50);
+    }, 100);
   };
 
   return (
@@ -136,20 +139,19 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       
       {/* 
          SCANNER CONTAINER
-         It is ALWAYS present in the DOM with full dimensions.
-         We do not hide it with display:none or visibility:hidden because the SDK needs to measure it.
-         Instead, we layer the "Loading UI" on top of it.
+         - z-index: 999 when scanning (Top of stack)
+         - pointer-events: auto to receive clicks
+         - bg-transparent to ensure we aren't masking the SDK with a black div if SDK fails to load background
       */}
       <div 
         id="prism-container"
         ref={containerRef}
-        className="absolute inset-0 w-full h-full bg-black z-0"
+        className={`absolute inset-0 w-full h-full bg-transparent transition-all duration-300 ${isScanning ? 'z-[999] opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}
       />
 
       {/* 
          OVERLAY UI (Loading / Start Button)
-         This sits at z-50. When we start scanning, we remove this overlay 
-         so the user can see the scanner underneath (at z-0).
+         - z-index: 50
       */}
       {!isScanning && !error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
