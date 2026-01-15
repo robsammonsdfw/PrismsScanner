@@ -90,9 +90,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     setIsScanning(true);
     setStatusMessage("Starting 3D Camera...");
 
-    // We use a small timeout to ensure the UI has updated (removing the overlay if we want, 
-    // or just keeping it until the camera takes over). 
-    // Since Prism renders into the div, we want that div to be ready.
+    // We use a small timeout to ensure the UI has updated 
+    // (removing the overlay if we want, or just keeping it until the camera takes over).
     setTimeout(() => {
         try {
           console.log("[Scanner] Calling prism.render()...");
@@ -113,7 +112,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             mode: sessionInfo.mode,
             apiBaseUrl: sessionInfo.apiBaseUrl,
             assetConfigId: sessionInfo.assetConfigId,
-            container: containerId, // Passed as STRING ID to prevent circular JSON error
+            container: containerId, // FIXED: Passing String ID to prevent JSON circular error
             screen: "capture", // Direct to camera
             onSuccess: (data: any) => onComplete(data),
             onFailure: (err: any) => {
@@ -140,19 +139,20 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       
       {/* 
          SCANNER CONTAINER
-         - z-index: 999 when scanning (Top of stack)
-         - pointer-events: auto to receive clicks
-         - bg-transparent to ensure we aren't masking the SDK with a black div if SDK fails to load background
+         - z-index: 999 when scanning to sit on top of everything.
+         - bg-transparent so it doesn't mask the camera if the SDK is transparent.
+         - Explicit style to force dimensions.
       */}
       <div 
         id="prism-container"
         ref={containerRef}
-        className={`absolute inset-0 w-full h-full bg-transparent transition-all duration-300 ${isScanning ? 'z-[999] opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+        className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}
       />
 
       {/* 
          OVERLAY UI (Loading / Start Button)
-         - z-index: 50
+         - z-index: 50. It sits above the container UNTIL scanning starts.
       */}
       {!isScanning && !error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
