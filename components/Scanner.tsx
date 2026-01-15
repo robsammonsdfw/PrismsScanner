@@ -80,7 +80,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   // 3. Start The Scanner
   const handleStartScanner = () => {
-    if (!isReady || !containerRef.current) return;
+    if (!isReady) return;
 
     setIsScanning(true);
     setStatusMessage("Starting 3D Camera...");
@@ -94,7 +94,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         mode: sessionInfo.mode,
         apiBaseUrl: sessionInfo.apiBaseUrl,
         assetConfigId: sessionInfo.assetConfigId,
-        container: containerRef.current,
+        // CRITICAL FIX: Pass the ID string, NOT the DOM element ref.
+        // Passing the element causes JSON.stringify() to crash with "circular structure".
+        container: "prism-container", 
         onSuccess: (data: any) => onComplete(data),
         onFailure: (err: any) => {
           console.error("[Scanner] Failure Callback:", err);
@@ -115,7 +117,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
-      {/* Target for Prism SDK */}
+      {/* Target for Prism SDK - ID MUST MATCH THE 'container' STRING PASSED ABOVE */}
       <div 
         ref={containerRef} 
         id="prism-container"
