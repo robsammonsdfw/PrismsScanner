@@ -10,18 +10,17 @@ interface ScannerProps {
 }
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  // STATE CHANGE: Use state instead of ref to trigger re-renders
-  const [isScannerActive, setIsScannerActive] = useState<boolean>(false);
-  
-  // State
+  // State for session and Prism instance
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [prismInstance, setPrismInstance] = useState<any>(null);
-  const [statusMessage, setStatusMessage] = useState<string>("Initializing secure tunnel...");
   const [error, setError] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState<boolean>(false);
   const [retryKey, setRetryKey] = useState<number>(0);
+  
+  // State for UI flow
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string>("Initializing secure tunnel...");
+
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 1. Load Prism SDK Script & Listen for Event
   useEffect(() => {
@@ -80,23 +79,29 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   }, [retryKey]);
 
   const isReady = !!sessionInfo && !!prismInstance;
+  const isAuthError = error === "Session expired";
 
   // 3. Start The Scanner
   const handleStartScanner = () => {
     if (!isReady) return;
-    if (isScanning) return; // Prevent double click
+    if (isScanning) return; 
 
+    // Clear previous errors/state
     setIsScanning(true);
     setStatusMessage("Starting 3D Camera...");
 
-    // 1. Make the container visible FIRST so Prism can measure it
-    setIsScannerActive(true);
-
-    // 2. Call Render after a short tick to allow DOM to update visibility
+    // We use a small timeout to ensure the UI has updated (removing the overlay if we want, 
+    // or just keeping it until the camera takes over). 
+    // Since Prism renders into the div, we want that div to be ready.
     setTimeout(() => {
         try {
           console.log("[Scanner] Calling prism.render()...");
           
+          if (containerRef.current) {
+              // Safety clean
+              containerRef.current.innerHTML = '';
+          }
+
           prismInstance.render({
             apiKey: "token_based_auth", 
             scanId: sessionInfo.scanId,
@@ -104,14 +109,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             mode: sessionInfo.mode,
             apiBaseUrl: sessionInfo.apiBaseUrl,
             assetConfigId: sessionInfo.assetConfigId,
-            container: "prism-container",
-            // Removed 'screen: "capture"' to allow default flow (usually handles permissions better)
+            container: "prism-container", // ID string to prevent circular errors
+            screen: "capture", // Jump directly to camera
             onSuccess: (data: any) => onComplete(data),
             onFailure: (err: any) => {
               console.error("[Scanner] Failure Callback:", err);
               setError(err.message || "Scan failed. Please try again.");
               setIsScanning(false);
-              setIsScannerActive(false);
             },
             onClose: () => {
                 console.log("[Scanner] Closed by user");
@@ -123,103 +127,106 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           console.error("[Scanner] Render Exception:", e);
           setError(`Engine Error: ${e.message}`);
           setIsScanning(false);
-          setIsScannerActive(false);
         }
-    }, 100);
+    }, 50);
   };
-
-  const isAuthError = error === "Session expired";
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
       
       {/* 
-         Target for Prism SDK.
-         z-index logic: When active, it jumps to z-50 to be visible.
-         When inactive, it is z-0 to sit behind the UI.
-         Opacity logic: We keep opacity 100 but z-index low when not active to ensure dimensions exist if needed,
-         but visually hidden by the Loading card.
+         SCANNER CONTAINER
+         It is ALWAYS present in the DOM with full dimensions.
+         We do not hide it with display:none or visibility:hidden because the SDK needs to measure it.
+         Instead, we layer the "Loading UI" on top of it.
       */}
       <div 
         id="prism-container"
         ref={containerRef}
-        className={`absolute inset-0 w-full h-full bg-black ${isScannerActive ? 'z-50' : 'z-0'}`} 
+        className="absolute inset-0 w-full h-full bg-black z-0"
       />
 
-      {/* Preparation UI (Before Start) - Hides when isScannerActive is true */}
-      {!isScannerActive && !error && (
-        <div className="relative z-[60] flex flex-col items-center p-8 text-center bg-slate-900/90 backdrop-blur-xl rounded-[2rem] border border-white/10 max-w-sm mx-auto animate-in fade-in zoom-in-95 duration-300 shadow-2xl">
-            
-            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
-                {isReady ? (
-                   <Camera className="w-10 h-10 text-emerald-400" />
-                ) : (
-                   <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
-                )}
-            </div>
-
-            <h2 className="text-2xl font-bold mb-3 tracking-tight">
-                {isReady ? "Scanner Ready" : "System Check"}
-            </h2>
-            
-            <div className="flex flex-col gap-2 text-sm text-zinc-400 mb-8 w-full">
-                <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg">
-                    <span>Secure Tunnel</span>
-                    {sessionInfo ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
+      {/* 
+         OVERLAY UI (Loading / Start Button)
+         This sits at z-50. When we start scanning, we remove this overlay 
+         so the user can see the scanner underneath (at z-0).
+      */}
+      {!isScanning && !error && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
+            <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
+                <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
+                    {isReady ? (
+                    <Camera className="w-10 h-10 text-emerald-400" />
+                    ) : (
+                    <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+                    )}
                 </div>
-                <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg">
-                    <span>3D Engine</span>
-                    {prismInstance ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
-                </div>
-            </div>
 
-            <button 
-                onClick={handleStartScanner}
-                disabled={!isReady}
-                className={`w-full py-5 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2
-                    ${isReady 
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer' 
-                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                    }`}
-            >
-                {isReady ? "Initialize Scanner" : "Loading..."}
-            </button>
-            
-            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
-                Cancel
-            </button>
+                <h2 className="text-2xl font-bold mb-3 tracking-tight">
+                    {isReady ? "Scanner Ready" : "System Check"}
+                </h2>
+                
+                <div className="flex flex-col gap-2 text-sm text-zinc-400 mb-8 w-full">
+                    <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
+                        <span>Secure Tunnel</span>
+                        {sessionInfo ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
+                        <span>3D Engine</span>
+                        {prismInstance ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
+                    </div>
+                </div>
+
+                <button 
+                    onClick={handleStartScanner}
+                    disabled={!isReady}
+                    className={`w-full py-5 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2
+                        ${isReady 
+                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer' 
+                            : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                        }`}
+                >
+                    {isReady ? "Initialize Scanner" : "Loading..."}
+                </button>
+                
+                <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
+                    Cancel
+                </button>
+            </div>
         </div>
       )}
 
-      {/* Error View */}
+      {/* ERROR UI (High Z-Index) */}
       {error && (
-        <div className="relative z-[80] flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
-          {isAuthError ? (
-              <LogOut className="w-12 h-12 text-zinc-400 mb-4" />
-          ) : (
-              <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
-          )}
-          
-          <p className="text-white font-semibold mb-6">{isAuthError ? "For security, your session has timed out." : error}</p>
-          
-          {!isAuthError && (
-              <div className="flex flex-col gap-3 w-full">
-                <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold flex items-center justify-center gap-2">
-                    <RefreshCcw className="w-4 h-4" /> Try Again
-                </button>
-                <button onClick={onClose} className="w-full py-3 bg-zinc-900 text-zinc-500 rounded-xl font-medium">Cancel</button>
-              </div>
-          )}
-          {isAuthError && (
-               <div className="flex flex-col gap-3 w-full">
-                   <button 
-                     onClick={() => window.location.href = 'https://main.embracehealth.ai'}
-                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-colors"
-                   >
-                     Log In Again
-                   </button>
-               </div>
-          )}
+        <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md">
+            <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
+                {isAuthError ? (
+                    <LogOut className="w-12 h-12 text-zinc-400 mb-4" />
+                ) : (
+                    <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+                )}
+                
+                <p className="text-white font-semibold mb-6">{isAuthError ? "For security, your session has timed out." : error}</p>
+                
+                {!isAuthError && (
+                    <div className="flex flex-col gap-3 w-full">
+                        <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold flex items-center justify-center gap-2">
+                            <RefreshCcw className="w-4 h-4" /> Try Again
+                        </button>
+                        <button onClick={onClose} className="w-full py-3 bg-zinc-900 text-zinc-500 rounded-xl font-medium">Cancel</button>
+                    </div>
+                )}
+                {isAuthError && (
+                    <div className="flex flex-col gap-3 w-full">
+                        <button 
+                            onClick={() => window.location.href = 'https://main.embracehealth.ai'}
+                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-colors"
+                        >
+                            Log In Again
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
       )}
     </div>
