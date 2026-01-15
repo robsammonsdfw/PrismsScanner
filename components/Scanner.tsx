@@ -10,19 +10,24 @@ interface ScannerProps {
 }
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
-  // State for session and Prism instance
+  // --- STATE ---
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [prismInstance, setPrismInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState<number>(0);
   
-  // State for UI flow
+  // UI Flow
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string>("Initializing secure tunnel...");
-
+  
+  // --- REFS ---
+  // We use IDs for the SDK, but Refs for React housekeeping
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // RULE #3: Strict Mode Guard
+  // Prevents double-invocation of prism.render which causes crashes
+  const scanInitRef = useRef<boolean>(false);
 
-  // 1. Load Prism SDK Script & Listen for Event
+  // --- EFFECT 1: Load SDK ---
   useEffect(() => {
     const handlePrismLoaded = (event: CustomEvent) => {
       console.log("[Scanner] Prism SDK Event Received", event.detail);
@@ -34,6 +39,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
 
     const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
+    // Check if script exists to avoid duplicates
     let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement;
     
     if (!script) {
@@ -45,6 +51,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       script.onerror = () => setError("Failed to load 3D Scanning Engine. Check your connection.");
       document.body.appendChild(script);
     } else {
+        // Handle case where script is already loaded from previous mount
         // @ts-ignore
         if (window.prism) {
             // @ts-ignore
@@ -57,10 +64,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     };
   }, []);
 
-  // 2. Fetch Backend Session
+  // --- EFFECT 2: Fetch Session ---
   useEffect(() => {
     const fetchSession = async () => {
       setError(null);
+      // Reset guard on retry
+      scanInitRef.current = false;
+      
       try {
         const userAgent = navigator.userAgent || '';
         const device = /iPad|iPhone|iPod/.test(userAgent) ? 'IPHONE_SCANNER' : 'ANDROID_SCANNER';
@@ -81,23 +91,29 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const isReady = !!sessionInfo && !!prismInstance;
   const isAuthError = error === "Session expired";
 
-  // 3. Start The Scanner
+  // --- HANDLER: Start Scanner ---
   const handleStartScanner = () => {
+    // Safety Checks
     if (!isReady) return;
     if (isScanning) return; 
+    if (scanInitRef.current) return; // Prevent double-click or strict mode double-fire
 
-    // Clear previous errors/state
+    // Lock initialization
+    scanInitRef.current = true;
+    
+    // UI Update
     setIsScanning(true);
-    setStatusMessage("Starting 3D Camera...");
 
-    // We use a small timeout to ensure the UI has updated 
-    // (removing the overlay if we want, or just keeping it until the camera takes over).
+    // RULE #4: DOM Paint Delay
+    // Wait for the UI to update (z-index change) before initializing SDK
     setTimeout(() => {
         try {
-          console.log("[Scanner] Calling prism.render()...");
+          console.log("[Scanner] Initializing Prism Render...");
           
-          // Ensure the element is clean
+          // RULE #1: String ID Only
           const containerId = "prism-container";
+          
+          // RULE #5: Clean Slate
           const el = document.getElementById(containerId);
           if (el) {
               el.innerHTML = '';
@@ -106,19 +122,25 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           }
 
           prismInstance.render({
+            // Auth & Config
             apiKey: "token_based_auth", 
             scanId: sessionInfo.scanId,
             token: sessionInfo.securityToken,
             mode: sessionInfo.mode,
             apiBaseUrl: sessionInfo.apiBaseUrl,
             assetConfigId: sessionInfo.assetConfigId,
-            container: containerId, // FIXED: Passing String ID to prevent JSON circular error
-            screen: "capture", // Direct to camera
+            
+            // Core Integration Config
+            container: containerId, // <--- MUST BE STRING
+            screen: "capture",      // <--- Auto-start camera
+            
+            // Callbacks
             onSuccess: (data: any) => onComplete(data),
             onFailure: (err: any) => {
               console.error("[Scanner] Failure Callback:", err);
               setError(err.message || "Scan failed. Please try again.");
               setIsScanning(false);
+              scanInitRef.current = false; // Allow retry
             },
             onClose: () => {
                 console.log("[Scanner] Closed by user");
@@ -130,8 +152,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           console.error("[Scanner] Render Exception:", e);
           setError(`Engine Error: ${e.message}`);
           setIsScanning(false);
+          scanInitRef.current = false;
         }
-    }, 100);
+    }, 150); // Increased delay slightly to ensure transition completes
   };
 
   return (
@@ -139,21 +162,24 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       
       {/* 
          SCANNER CONTAINER
-         - z-index: 999 when scanning to sit on top of everything.
-         - bg-transparent so it doesn't mask the camera if the SDK is transparent.
-         - Explicit style to force dimensions.
+         - RULE #2: Visibility First
+         - We force z-999 and opacity-100 when scanning starts
       */}
       <div 
         id="prism-container"
         ref={containerRef}
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-        className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100' : 'z-0 opacity-0 pointer-events-none'}`}
+        style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            width: '100%', 
+            height: '100%',
+            touchAction: 'none' // Prevent scrolling/zooming on mobile
+        }}
+        className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-0 opacity-0 pointer-events-none'}`}
       />
 
-      {/* 
-         OVERLAY UI (Loading / Start Button)
-         - z-index: 50. It sits above the container UNTIL scanning starts.
-      */}
+      {/* OVERLAY UI */}
       {!isScanning && !error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
             <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
@@ -199,7 +225,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         </div>
       )}
 
-      {/* ERROR UI (High Z-Index) */}
+      {/* ERROR UI */}
       {error && (
         <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md">
             <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
