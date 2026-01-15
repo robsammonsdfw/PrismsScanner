@@ -46,7 +46,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       script.onerror = () => setError("Failed to load 3D Scanning Engine. Check your connection.");
       document.body.appendChild(script);
     } else {
-        console.log("[Scanner] Script already present.");
+        // If script is already loaded, check if window.prism exists (race condition handling)
+        // @ts-ignore
+        if (window.prism) {
+            // @ts-ignore
+            setPrismInstance(window.prism);
+        } else {
+            console.log("[Scanner] Script present, waiting for event...");
+        }
     }
 
     return () => {
@@ -65,7 +72,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         setSessionInfo(data);
       } catch (err: any) {
         console.error(err);
-        if (err.message.includes("Session expired")) {
+        if (err.message && err.message.includes("Session expired")) {
             setError("Session expired");
         } else {
             setError(err.message || "Failed to connect to scanning server.");
@@ -81,35 +88,42 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   // 3. Start The Scanner
   const handleStartScanner = () => {
     if (!isReady) return;
+    if (initializedRef.current) return; // Prevent double init
 
     setIsScanning(true);
     setStatusMessage("Starting 3D Camera...");
 
     try {
       console.log("[Scanner] Calling prism.render()...");
+      
+      // CRITICAL FIX: We pass the string ID "prism-container" instead of the DOM element.
+      // Passing the DOM element causes the SDK to crash when it tries to JSON.stringify the config.
       prismInstance.render({
-        apiKey: "token_based_auth", // As per their docs/example
+        apiKey: "token_based_auth", 
         scanId: sessionInfo.scanId,
         token: sessionInfo.securityToken,
         mode: sessionInfo.mode,
         apiBaseUrl: sessionInfo.apiBaseUrl,
         assetConfigId: sessionInfo.assetConfigId,
-        // CRITICAL FIX: Pass the ID string, NOT the DOM element ref.
-        // Passing the element causes JSON.stringify() to crash with "circular structure".
-        container: "prism-container", 
+        container: "prism-container", // <--- ID STRING ONLY
         onSuccess: (data: any) => onComplete(data),
         onFailure: (err: any) => {
           console.error("[Scanner] Failure Callback:", err);
           setError(err.message || "Scan failed. Please try again.");
           setIsScanning(false);
+          initializedRef.current = false;
         },
-        onClose: () => onClose()
+        onClose: () => {
+            console.log("[Scanner] Closed by user");
+            onClose();
+        }
       });
       initializedRef.current = true;
     } catch (e: any) {
       console.error("[Scanner] Render Exception:", e);
       setError(`Engine Error: ${e.message}`);
       setIsScanning(false);
+      initializedRef.current = false;
     }
   };
 
@@ -119,8 +133,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
       {/* Target for Prism SDK - ID MUST MATCH THE 'container' STRING PASSED ABOVE */}
       <div 
-        ref={containerRef} 
         id="prism-container"
+        ref={containerRef}
         className={`absolute inset-0 w-full h-full bg-black ${initializedRef.current ? 'z-50' : 'z-10'}`} 
       />
 

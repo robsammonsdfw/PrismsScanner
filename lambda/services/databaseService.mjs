@@ -2,14 +2,12 @@
 import pg from 'pg';
 
 const { Pool } = pg;
-
-// Use standard environment variables for PG connection (PGHOST, PGUSER, etc.)
-// which 'pg' library picks up automatically. We add SSL config for AWS RDS.
 const pool = new Pool({
     ssl: {
         rejectUnauthorized: false
     },
-    max: 10, // Limit pool size for Lambda
+    // Prevent Lambda cold start connection storms
+    max: 2, 
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 10000 
 });
