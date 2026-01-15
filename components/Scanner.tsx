@@ -84,46 +84,48 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   // 3. Start The Scanner
   const handleStartScanner = () => {
     if (!isReady) return;
-    if (isScannerActive) return; // Prevent double init
+    if (isScanning) return; // Prevent double click
 
     setIsScanning(true);
     setStatusMessage("Starting 3D Camera...");
 
-    try {
-      console.log("[Scanner] Calling prism.render()...");
-      
-      // CRITICAL: Passing string ID "prism-container" prevents circular JSON errors
-      prismInstance.render({
-        apiKey: "token_based_auth", 
-        scanId: sessionInfo.scanId,
-        token: sessionInfo.securityToken,
-        mode: sessionInfo.mode,
-        apiBaseUrl: sessionInfo.apiBaseUrl,
-        assetConfigId: sessionInfo.assetConfigId,
-        container: "prism-container",
-        screen: "capture", // Explicitly request capture screen
-        onSuccess: (data: any) => onComplete(data),
-        onFailure: (err: any) => {
-          console.error("[Scanner] Failure Callback:", err);
-          setError(err.message || "Scan failed. Please try again.");
+    // 1. Make the container visible FIRST so Prism can measure it
+    setIsScannerActive(true);
+
+    // 2. Call Render after a short tick to allow DOM to update visibility
+    setTimeout(() => {
+        try {
+          console.log("[Scanner] Calling prism.render()...");
+          
+          prismInstance.render({
+            apiKey: "token_based_auth", 
+            scanId: sessionInfo.scanId,
+            token: sessionInfo.securityToken,
+            mode: sessionInfo.mode,
+            apiBaseUrl: sessionInfo.apiBaseUrl,
+            assetConfigId: sessionInfo.assetConfigId,
+            container: "prism-container",
+            // Removed 'screen: "capture"' to allow default flow (usually handles permissions better)
+            onSuccess: (data: any) => onComplete(data),
+            onFailure: (err: any) => {
+              console.error("[Scanner] Failure Callback:", err);
+              setError(err.message || "Scan failed. Please try again.");
+              setIsScanning(false);
+              setIsScannerActive(false);
+            },
+            onClose: () => {
+                console.log("[Scanner] Closed by user");
+                onClose();
+            }
+          });
+          
+        } catch (e: any) {
+          console.error("[Scanner] Render Exception:", e);
+          setError(`Engine Error: ${e.message}`);
           setIsScanning(false);
           setIsScannerActive(false);
-        },
-        onClose: () => {
-            console.log("[Scanner] Closed by user");
-            onClose();
         }
-      });
-      
-      // Update state to HIDE the loading UI and SHOW the scanner canvas
-      setIsScannerActive(true);
-
-    } catch (e: any) {
-      console.error("[Scanner] Render Exception:", e);
-      setError(`Engine Error: ${e.message}`);
-      setIsScanning(false);
-      setIsScannerActive(false);
-    }
+    }, 100);
   };
 
   const isAuthError = error === "Session expired";
@@ -135,11 +137,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
          Target for Prism SDK.
          z-index logic: When active, it jumps to z-50 to be visible.
          When inactive, it is z-0 to sit behind the UI.
+         Opacity logic: We keep opacity 100 but z-index low when not active to ensure dimensions exist if needed,
+         but visually hidden by the Loading card.
       */}
       <div 
         id="prism-container"
         ref={containerRef}
-        className={`absolute inset-0 w-full h-full bg-black transition-all duration-500 ${isScannerActive ? 'z-50 opacity-100' : 'z-0 opacity-0'}`} 
+        className={`absolute inset-0 w-full h-full bg-black ${isScannerActive ? 'z-50' : 'z-0'}`} 
       />
 
       {/* Preparation UI (Before Start) - Hides when isScannerActive is true */}
