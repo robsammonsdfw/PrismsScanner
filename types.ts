@@ -1,5 +1,4 @@
 
-
 // Window interface augmentation to handle the custom Prism event
 export interface PrismInstance {
   render: (config: PrismConfig) => void;
@@ -13,7 +12,10 @@ export interface PrismConfig {
   scanId?: string;
   token?: string;
   screen?: string; // e.g., 'landing', 'capture'
+  
+  // CHECKLIST UPDATE: Container MUST allow string for ID reference
   container?: HTMLElement | string;
+  
   mode?: string; // Added to support 'sandbox' or 'production' modes
   
   // URL Overrides - Providing multiple variants to ensure SDK picks one up

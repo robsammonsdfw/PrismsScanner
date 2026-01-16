@@ -20,11 +20,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [isScanning, setIsScanning] = useState<boolean>(false);
   
   // --- REFS ---
-  // We use IDs for the SDK, but Refs for React housekeeping
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // RULE #3: Strict Mode Guard
-  // Prevents double-invocation of prism.render which causes crashes
+  // CHECKLIST ITEM #4: Strict Mode Guard
+  // Prevents double-invocation of prism.render which causes SDK crashes
   const scanInitRef = useRef<boolean>(false);
 
   // --- EFFECT 1: Load SDK ---
@@ -38,8 +37,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
 
+    // Use the CDN version as recommended by Prism Devs
     const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
-    // Check if script exists to avoid duplicates
     let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement;
     
     if (!script) {
@@ -51,9 +50,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       script.onerror = () => setError("Failed to load 3D Scanning Engine. Check your connection.");
       document.body.appendChild(script);
     } else {
-        // Handle case where script is already loaded from previous mount
         // @ts-ignore
         if (window.prism) {
+            console.log("[Scanner] Prism global found");
             // @ts-ignore
             setPrismInstance(window.prism);
         }
@@ -66,26 +65,33 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   // --- EFFECT 2: Fetch Session ---
   useEffect(() => {
+    let mounted = true;
     const fetchSession = async () => {
       setError(null);
-      // Reset guard on retry
-      scanInitRef.current = false;
+      scanInitRef.current = false; // Reset guard on retry
       
       try {
         const userAgent = navigator.userAgent || '';
         const device = /iPad|iPhone|iPod/.test(userAgent) ? 'IPHONE_SCANNER' : 'ANDROID_SCANNER';
         const data = await initScanSession(device);
-        setSessionInfo(data);
+        
+        if (mounted) {
+            console.log("[Scanner] Session Loaded:", data ? "OK" : "Empty");
+            setSessionInfo(data);
+        }
       } catch (err: any) {
         console.error(err);
-        if (err.message && err.message.includes("Session expired")) {
-            setError("Session expired");
-        } else {
-            setError(err.message || "Failed to connect to scanning server.");
+        if (mounted) {
+            if (err.message && err.message.includes("Session expired")) {
+                setError("Session expired");
+            } else {
+                setError(err.message || "Failed to connect to scanning server.");
+            }
         }
       }
     };
     fetchSession();
+    return () => { mounted = false; };
   }, [retryKey]);
 
   const isReady = !!sessionInfo && !!prismInstance;
@@ -96,24 +102,29 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     // Safety Checks
     if (!isReady) return;
     if (isScanning) return; 
-    if (scanInitRef.current) return; // Prevent double-click or strict mode double-fire
+    
+    // CHECKLIST ITEM #4: Guard against multiple clicks/strict mode
+    if (scanInitRef.current) {
+        console.warn("[Scanner] Render already in progress, ignoring duplicate call.");
+        return; 
+    }
 
     // Lock initialization
     scanInitRef.current = true;
     
-    // UI Update
+    // UI Update - Triggers z-index change
     setIsScanning(true);
 
-    // RULE #4: DOM Paint Delay
+    // CHECKLIST ITEM #5: Paint Delay
     // Wait for the UI to update (z-index change) before initializing SDK
     setTimeout(() => {
         try {
           console.log("[Scanner] Initializing Prism Render...");
           
-          // RULE #1: String ID Only
+          // CHECKLIST ITEM #1: String ID Only
           const containerId = "prism-container";
           
-          // RULE #5: Clean Slate
+          // CHECKLIST ITEM #3: Clean Slate
           const el = document.getElementById(containerId);
           if (el) {
               el.innerHTML = '';
@@ -130,17 +141,19 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             apiBaseUrl: sessionInfo.apiBaseUrl,
             assetConfigId: sessionInfo.assetConfigId,
             
-            // Core Integration Config
-            container: containerId, // <--- MUST BE STRING
-            screen: "capture",      // <--- Auto-start camera
+            // CHECKLIST ITEM #1 & #2: String ID and Screen Mode
+            container: containerId, 
+            screen: "capture",      // Direct to camera
             
             // Callbacks
             onSuccess: (data: any) => onComplete(data),
             onFailure: (err: any) => {
               console.error("[Scanner] Failure Callback:", err);
+              // Don't show error immediately for "User cancelled" type events if they exist, 
+              // but usually failure means technical failure.
               setError(err.message || "Scan failed. Please try again.");
               setIsScanning(false);
-              scanInitRef.current = false; // Allow retry
+              scanInitRef.current = false; 
             },
             onClose: () => {
                 console.log("[Scanner] Closed by user");
@@ -154,7 +167,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           setIsScanning(false);
           scanInitRef.current = false;
         }
-    }, 150); // Increased delay slightly to ensure transition completes
+    }, 200); // Increased to 200ms to be absolutely safe about DOM paint
   };
 
   return (
@@ -162,8 +175,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       
       {/* 
          SCANNER CONTAINER
-         - RULE #2: Visibility First
-         - We force z-999 and opacity-100 when scanning starts
+         CHECKLIST ITEM #2: Visibility First
+         - z-index: 999 (High priority)
+         - opacity: 100 (Visible)
+         - pointer-events: auto (Interactable)
+         - Absolute positioning to fill the screen
       */}
       <div 
         id="prism-container"
@@ -174,9 +190,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             left: 0, 
             width: '100%', 
             height: '100%',
-            touchAction: 'none' // Prevent scrolling/zooming on mobile
+            backgroundColor: 'transparent', 
+            touchAction: 'none'
         }}
-        className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-0 opacity-0 pointer-events-none'}`}
+        className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-[-1] opacity-0 pointer-events-none'}`}
       />
 
       {/* OVERLAY UI */}
