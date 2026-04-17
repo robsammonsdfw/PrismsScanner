@@ -132,6 +132,18 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
               throw new Error("Scanner container not found in DOM");
           }
 
+          console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
+            apiKey: "token_based_auth",
+            scanId: sessionInfo.scanId,
+            prismScanId: sessionInfo.prismScanId,   // will be undefined until you redeploy Lambda
+            token: sessionInfo.securityToken,
+            mode: sessionInfo.mode,
+            apiBaseUrl: sessionInfo.apiBaseUrl,
+            assetConfigId: sessionInfo.assetConfigId,
+            container: "prism-container",
+            screen: "capture"
+        });
+        
           prismInstance.render({
             // Auth & Config
             apiKey: "token_based_auth", 

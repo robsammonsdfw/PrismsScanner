@@ -97,11 +97,12 @@ export const handler = async (event) => {
     
     // Dynamic CORS configuration
     const allowedOrigins = [
-        "https://food.embracehealth.ai",
-        "https://app.embracehealth.ai",
-        "https://main.dfp0msdoew280.amplifyapp.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
+     "https://food.embracehealth.ai",
+    "https://app.embracehealth.ai",
+    "https://scan.embracehealth.ai",           
+    "https://main.dfp0msdoew280.amplifyapp.com",
+    "http://localhost:5173",
+    "http://localhost:3000",
         FRONTEND_URL
     ].filter(Boolean);
 
@@ -326,14 +327,18 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             assetConfigId: assetConfigId,
             deviceConfigName: body.deviceConfigName || 'ANDROID_SCANNER'
         });
-
+        console.log("[Prism] FULL USER RESPONSE (for reference):", JSON.stringify(userRes?.data || {}, null, 2));
+        console.log("[Prism] FULL SCAN RESPONSE from Prism:", JSON.stringify(scanRes.data, null, 2));
+        console.log("[Prism] Status:", scanRes.status, "OK?", scanRes.ok);
         if (!scanRes.ok) {
             console.error("[Prism] Scan Session Creation Failed:", scanRes.data);
             return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session Failed", details: scanRes.data }) };
         }
-
+        console.log("[Prism DEBUG] securityToken from /users step:", securityToken);
+        console.log("[Prism DEBUG] scanRes.data keys:", Object.keys(scanRes.data || {}));
+        console.log("[Prism DEBUG] FULL scanRes.data:", JSON.stringify(scanRes.data, null, 2));
         // IMPROVED: Prioritize 'clientToken' or 'token' from Scan response over User securityToken
-        const finalToken = scanRes.data.clientToken || scanRes.data.token || scanRes.data.securityToken || securityToken;
+        const finalToken = scanRes.data.clientToken || scanRes.data.token || scanRes.data.securityToken || securityToken || prismUserToken;
 
         if (!finalToken) {
             return { statusCode: 502, headers, body: JSON.stringify({ error: "No security token returned by Prism API" }) };
@@ -344,6 +349,7 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             headers,
             body: JSON.stringify({
                 scanId: scanRes.data.id || scanRes.data._id,
+                prismScanId: scanRes.data.prismScanId,
                 securityToken: finalToken,
                 apiBaseUrl: baseUrl,
                 assetConfigId: assetConfigId,
