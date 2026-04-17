@@ -176,7 +176,7 @@ const handleStartScanner = () => {
             left: 0, 
             width: '100%', 
             height: '100%',
-            backgroundColor: 'transparent', 
+            backgroundColor: 'red', 
             touchAction: 'none'
         }}
         className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-[-1] opacity-0 pointer-events-none'}`}
