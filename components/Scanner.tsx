@@ -97,20 +97,22 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const isAuthError = error === "Session expired";
 
   // --- HANDLER: Start Scanner ---
-const handleStartScanner = () => {
-  if (!isReady) return;
-  if (isScanning) return; 
-
-  // Clear previous errors/state
-  setIsScanning(true);
-  setStatusMessage("Starting 3D Camera...");
-
-  setTimeout(() => {
+  const handleStartScanner = () => {
+    if (!isReady) return;
+    if (isScanning) return; 
+  
+    setIsScanning(true);
+    setStatusMessage("Starting 3D Camera...");
+  };
+  
+  // NEW: Render the SDK AFTER React has updated the DOM
+  useEffect(() => {
+    if (!isScanning || !prismInstance || !sessionInfo) return;
+  
     try {
       console.log("[Scanner] Container element ready?", !!containerRef.current);
-
-      // === REVERTED TO ORIGINAL STRING ID (this is what worked before) ===
-      console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
+  
+      const renderConfig = {
         apiKey: "token_based_auth", 
         scanId: sessionInfo.scanId,
         prismScanId: sessionInfo.prismScanId,
@@ -118,27 +120,21 @@ const handleStartScanner = () => {
         mode: sessionInfo.mode,
         apiBaseUrl: sessionInfo.apiBaseUrl,
         assetConfigId: sessionInfo.assetConfigId,
-        container: "prism-container",     // ← ORIGINAL STRING ID
+        container: containerRef.current,        // use the actual DOM element
         screen: "capture",
-      });
-
+      };
+  
+      console.log("[Scanner DEBUG] Full render config being sent to Prism:", renderConfig);
+  
       if (containerRef.current) {
-        containerRef.current.innerHTML = '';   // safety clean
+        containerRef.current.innerHTML = '';
       }
-
+  
       prismInstance.render({
-        apiKey: "token_based_auth", 
-        scanId: sessionInfo.scanId,
-        prismScanId: sessionInfo.prismScanId,
-        token: sessionInfo.securityToken,
-        mode: sessionInfo.mode,
-        apiBaseUrl: sessionInfo.apiBaseUrl,
-        assetConfigId: sessionInfo.assetConfigId,
-        container: "prism-container",          // ← ORIGINAL STRING ID
-        screen: "capture",
+        ...renderConfig,
         onSuccess: (data: any) => onComplete(data),
         onFailure: (err: any) => {
-          console.error("[Scanner] Failure Callback:", err);
+          console.error("[Scanner] PRISM FAILURE CALLBACK:", err);   // better error logging
           setError(err.message || "Scan failed. Please try again.");
           setIsScanning(false);
         },
@@ -147,14 +143,12 @@ const handleStartScanner = () => {
           onClose();
         }
       });
-      
     } catch (e: any) {
       console.error("[Scanner] Render Exception:", e);
       setError(`Engine Error: ${e.message}`);
       setIsScanning(false);
     }
-  }, 200);   // ← your exact original timeout
-};
+  }, [isScanning, prismInstance, sessionInfo]);   // ← triggers after isScanning changes
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
