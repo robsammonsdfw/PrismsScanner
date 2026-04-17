@@ -19,7 +19,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   // UI Flow
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("Initializing secure tunnel...");
-  
+
   // --- REFS ---
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -97,64 +97,64 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const isAuthError = error === "Session expired";
 
   // --- HANDLER: Start Scanner ---
-  const handleStartScanner = () => {
-    if (!isReady) return;
-    if (isScanning) return; 
-  
-    // Clear previous errors/state
-    setIsScanning(true);
-    setStatusMessage("Starting 3D Camera...");
-  
-    setTimeout(() => {
-      try {
-        console.log("[Scanner] Container element ready?", !!containerRef.current);
-  
-        // === UPDATED RENDER CALL (this is the only part that changed) ===
-        console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
-          apiKey: "token_based_auth", 
-          scanId: sessionInfo.scanId,
-          prismScanId: sessionInfo.prismScanId,
-          token: sessionInfo.securityToken,
-          mode: sessionInfo.mode,
-          apiBaseUrl: sessionInfo.apiBaseUrl,
-          assetConfigId: sessionInfo.assetConfigId,
-          container: containerRef.current,   // ← CHANGED to DOM element (most reliable for camera)
-          screen: "capture",
-        });
-  
-        if (containerRef.current) {
-          containerRef.current.innerHTML = '';   // safety clean before SDK attaches
-        }
-  
-        prismInstance.render({
-          apiKey: "token_based_auth", 
-          scanId: sessionInfo.scanId,
-          prismScanId: sessionInfo.prismScanId,
-          token: sessionInfo.securityToken,
-          mode: sessionInfo.mode,
-          apiBaseUrl: sessionInfo.apiBaseUrl,
-          assetConfigId: sessionInfo.assetConfigId,
-          container: containerRef.current,       // ← CHANGED to DOM element
-          screen: "capture",
-          onSuccess: (data: any) => onComplete(data),
-          onFailure: (err: any) => {
-            console.error("[Scanner] Failure Callback:", err);
-            setError(err.message || "Scan failed. Please try again.");
-            setIsScanning(false);
-          },
-          onClose: () => {
-            console.log("[Scanner] Closed by user");
-            onClose();
-          }
-        });
-        
-      } catch (e: any) {
-        console.error("[Scanner] Render Exception:", e);
-        setError(`Engine Error: ${e.message}`);
-        setIsScanning(false);
+const handleStartScanner = () => {
+  if (!isReady) return;
+  if (isScanning) return; 
+
+  // Clear previous errors/state
+  setIsScanning(true);
+  setStatusMessage("Starting 3D Camera...");
+
+  setTimeout(() => {
+    try {
+      console.log("[Scanner] Container element ready?", !!containerRef.current);
+
+      // === REVERTED TO ORIGINAL STRING ID (this is what worked before) ===
+      console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
+        apiKey: "token_based_auth", 
+        scanId: sessionInfo.scanId,
+        prismScanId: sessionInfo.prismScanId,
+        token: sessionInfo.securityToken,
+        mode: sessionInfo.mode,
+        apiBaseUrl: sessionInfo.apiBaseUrl,
+        assetConfigId: sessionInfo.assetConfigId,
+        container: "prism-container",     // ← ORIGINAL STRING ID
+        screen: "capture",
+      });
+
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';   // safety clean
       }
-    }, 200);   // ← your exact original timeout
-  };
+
+      prismInstance.render({
+        apiKey: "token_based_auth", 
+        scanId: sessionInfo.scanId,
+        prismScanId: sessionInfo.prismScanId,
+        token: sessionInfo.securityToken,
+        mode: sessionInfo.mode,
+        apiBaseUrl: sessionInfo.apiBaseUrl,
+        assetConfigId: sessionInfo.assetConfigId,
+        container: "prism-container",          // ← ORIGINAL STRING ID
+        screen: "capture",
+        onSuccess: (data: any) => onComplete(data),
+        onFailure: (err: any) => {
+          console.error("[Scanner] Failure Callback:", err);
+          setError(err.message || "Scan failed. Please try again.");
+          setIsScanning(false);
+        },
+        onClose: () => {
+          console.log("[Scanner] Closed by user");
+          onClose();
+        }
+      });
+      
+    } catch (e: any) {
+      console.error("[Scanner] Render Exception:", e);
+      setError(`Engine Error: ${e.message}`);
+      setIsScanning(false);
+    }
+  }, 200);   // ← your exact original timeout
+};
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
