@@ -18,6 +18,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   
   // UI Flow
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string>("Initializing secure tunnel...");
   
   // --- REFS ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,28 +98,17 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   // --- HANDLER: Start Scanner ---
   const handleStartScanner = () => {
-    // Safety Checks
     if (!isReady) return;
     if (isScanning) return; 
-    
-    // CHECKLIST ITEM #4: Guard against multiple clicks/strict mode
-    if (scanInitRef.current) {
-        console.warn("[Scanner] Render already in progress, ignoring duplicate call.");
-        return; 
-    }
-
-    // Lock initialization
-    scanInitRef.current = true;
-    
-    // UI Update - Triggers z-index change
+  
+    // Clear previous errors/state
     setIsScanning(true);
-
-    // CHECKLIST ITEM #5: Paint Delay
-    // Wait for the UI to update (z-index change) before initializing SDK
+    setStatusMessage("Starting 3D Camera...");
+  
     setTimeout(() => {
       try {
         console.log("[Scanner] Container element ready?", !!containerRef.current);
-    
+  
         // === UPDATED RENDER CALL (this is the only part that changed) ===
         console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
           apiKey: "token_based_auth", 
@@ -128,14 +118,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           mode: sessionInfo.mode,
           apiBaseUrl: sessionInfo.apiBaseUrl,
           assetConfigId: sessionInfo.assetConfigId,
-          container: "prism-container",        // ← CHANGED BACK to string ID (most reliable)
+          container: containerRef.current,   // ← CHANGED to DOM element (most reliable for camera)
           screen: "capture",
         });
-    
+  
         if (containerRef.current) {
-          containerRef.current.innerHTML = '';   // clear any previous content
+          containerRef.current.innerHTML = '';   // safety clean before SDK attaches
         }
-    
+  
         prismInstance.render({
           apiKey: "token_based_auth", 
           scanId: sessionInfo.scanId,
@@ -144,7 +134,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           mode: sessionInfo.mode,
           apiBaseUrl: sessionInfo.apiBaseUrl,
           assetConfigId: sessionInfo.assetConfigId,
-          container: "prism-container",          // ← string ID (this fixed it for most users)
+          container: containerRef.current,       // ← CHANGED to DOM element
           screen: "capture",
           onSuccess: (data: any) => onComplete(data),
           onFailure: (err: any) => {
@@ -163,7 +153,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         setError(`Engine Error: ${e.message}`);
         setIsScanning(false);
       }
-    }, 200); // Increased to 200ms to be absolutely safe about DOM paint
+    }, 200);   // ← your exact original timeout
   };
 
   return (
