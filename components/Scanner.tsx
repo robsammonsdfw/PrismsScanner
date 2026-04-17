@@ -176,7 +176,7 @@ const handleStartScanner = () => {
             left: 0, 
             width: '100%', 
             height: '100%',
-            backgroundColor: 'red', 
+            backgroundColor: 'transparent', 
             touchAction: 'none'
         }}
         className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-[-1] opacity-0 pointer-events-none'}`}
@@ -228,7 +228,7 @@ const handleStartScanner = () => {
         </div>
       )}
       {/* ERROR UI */}
-      
+
       {error && (
         <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md">
             <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
