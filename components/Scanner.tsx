@@ -179,8 +179,8 @@ const handleStartScanner = () => {
             backgroundColor: 'transparent', 
             touchAction: 'none'
         }}
-        className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-[-1] opacity-0 pointer-events-none'}`}
-      />
+        className="z-[100]"
+         />
 
       {/* OVERLAY UI — RESTORED */}
       {!isScanning && !error && (
