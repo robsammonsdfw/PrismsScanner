@@ -179,8 +179,9 @@ const handleStartScanner = () => {
             backgroundColor: 'transparent', 
             touchAction: 'none'
         }}
-        className="z-[100]"
-         />
+        className="absolute inset-0 w-full h-full z-0"
+        
+        />
 
       {/* OVERLAY UI — RESTORED */}
       {!isScanning && !error && (
