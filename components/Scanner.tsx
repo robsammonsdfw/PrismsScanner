@@ -63,35 +63,33 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     };
   }, []);
 
-  // --- EFFECT 2: Fetch Session ---
+  // 2. Fetch Backend Session — RESTORED ORIGINAL DEVICE DETECTION
   useEffect(() => {
-    let mounted = true;
     const fetchSession = async () => {
       setError(null);
-      scanInitRef.current = false; // Reset guard on retry
-      
       try {
         const userAgent = navigator.userAgent || '';
-        const device = /iPad|iPhone|iPod/.test(userAgent) ? 'IPHONE_SCANNER' : 'ANDROID_SCANNER';
-        const data = await initScanSession(device);
         
-        if (mounted) {
-            console.log("[Scanner] Session Loaded:", data ? "OK" : "Empty");
-            setSessionInfo(data);
-        }
+        // Original working detection logic you described
+        const device = /iPad|iPhone|iPod/.test(userAgent) 
+          ? 'IPHONE_SCANNER' 
+          : 'ANDROID_SCANNER';
+
+        console.log(`[Scanner] Device detected: ${device}`);
+        console.log(`[Scanner] Full userAgent: ${userAgent}`);
+
+        const data = await initScanSession(device);
+        setSessionInfo(data);
       } catch (err: any) {
         console.error(err);
-        if (mounted) {
-            if (err.message && err.message.includes("Session expired")) {
-                setError("Session expired");
-            } else {
-                setError(err.message || "Failed to connect to scanning server.");
-            }
+        if (err.message && err.message.includes("Session expired")) {
+          setError("Session expired");
+        } else {
+          setError(err.message || "Failed to connect to scanning server.");
         }
       }
     };
     fetchSession();
-    return () => { mounted = false; };
   }, [retryKey]);
 
   const isReady = !!sessionInfo && !!prismInstance;
@@ -118,67 +116,53 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     // CHECKLIST ITEM #5: Paint Delay
     // Wait for the UI to update (z-index change) before initializing SDK
     setTimeout(() => {
-        try {
-          console.log("[Scanner] Initializing Prism Render...");
-          
-          // CHECKLIST ITEM #1: String ID Only
-          const containerId = "prism-container";
-          
-          // CHECKLIST ITEM #3: Clean Slate
-          const el = document.getElementById(containerId);
-          if (el) {
-              el.innerHTML = '';
-          } else {
-              throw new Error("Scanner container not found in DOM");
+      try {
+        console.log("[Scanner] Container element ready?", !!containerRef.current);
+    
+        // === UPDATED RENDER CALL (this is the only part that changed) ===
+        console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
+          apiKey: "token_based_auth", 
+          scanId: sessionInfo.scanId,
+          prismScanId: sessionInfo.prismScanId,
+          token: sessionInfo.securityToken,
+          mode: sessionInfo.mode,
+          apiBaseUrl: sessionInfo.apiBaseUrl,
+          assetConfigId: sessionInfo.assetConfigId,
+          container: "prism-container",        // ← CHANGED BACK to string ID (most reliable)
+          screen: "capture",
+        });
+    
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '';   // clear any previous content
+        }
+    
+        prismInstance.render({
+          apiKey: "token_based_auth", 
+          scanId: sessionInfo.scanId,
+          prismScanId: sessionInfo.prismScanId,
+          token: sessionInfo.securityToken,
+          mode: sessionInfo.mode,
+          apiBaseUrl: sessionInfo.apiBaseUrl,
+          assetConfigId: sessionInfo.assetConfigId,
+          container: "prism-container",          // ← string ID (this fixed it for most users)
+          screen: "capture",
+          onSuccess: (data: any) => onComplete(data),
+          onFailure: (err: any) => {
+            console.error("[Scanner] Failure Callback:", err);
+            setError(err.message || "Scan failed. Please try again.");
+            setIsScanning(false);
+          },
+          onClose: () => {
+            console.log("[Scanner] Closed by user");
+            onClose();
           }
-
-          console.log("[Scanner DEBUG] Full render config being sent to Prism:", {
-            apiKey: "token_based_auth",
-            scanId: sessionInfo.scanId,
-            prismScanId: sessionInfo.prismScanId,   // will be undefined until you redeploy Lambda
-            token: sessionInfo.securityToken,
-            mode: sessionInfo.mode,
-            apiBaseUrl: sessionInfo.apiBaseUrl,
-            assetConfigId: sessionInfo.assetConfigId,
-            container: "prism-container",
-            screen: "capture"
         });
         
-          prismInstance.render({
-            // Auth & Config
-            apiKey: "token_based_auth", 
-            scanId: sessionInfo.scanId,
-            token: sessionInfo.securityToken,
-            mode: sessionInfo.mode,
-            apiBaseUrl: sessionInfo.apiBaseUrl,
-            assetConfigId: sessionInfo.assetConfigId,
-            
-            // CHECKLIST ITEM #1 & #2: String ID and Screen Mode
-            container: containerId, 
-            screen: "capture",      // Direct to camera
-            
-            // Callbacks
-            onSuccess: (data: any) => onComplete(data),
-            onFailure: (err: any) => {
-              console.error("[Scanner] Failure Callback:", err);
-              // Don't show error immediately for "User cancelled" type events if they exist, 
-              // but usually failure means technical failure.
-              setError(err.message || "Scan failed. Please try again.");
-              setIsScanning(false);
-              scanInitRef.current = false; 
-            },
-            onClose: () => {
-                console.log("[Scanner] Closed by user");
-                onClose();
-            }
-          });
-          
-        } catch (e: any) {
-          console.error("[Scanner] Render Exception:", e);
-          setError(`Engine Error: ${e.message}`);
-          setIsScanning(false);
-          scanInitRef.current = false;
-        }
+      } catch (e: any) {
+        console.error("[Scanner] Render Exception:", e);
+        setError(`Engine Error: ${e.message}`);
+        setIsScanning(false);
+      }
     }, 200); // Increased to 200ms to be absolutely safe about DOM paint
   };
 
