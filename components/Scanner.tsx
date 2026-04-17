@@ -179,7 +179,7 @@ const handleStartScanner = () => {
             backgroundColor: 'transparent', 
             touchAction: 'none'
         }}
-        className="absolute inset-0 w-full h-full z-[100]"
+        className="absolute inset-0 w-full h-full z-0"
         
         />
 
