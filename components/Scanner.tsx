@@ -182,7 +182,7 @@ const handleStartScanner = () => {
         className={`transition-all duration-300 ${isScanning ? 'z-[999] opacity-100 pointer-events-auto' : 'z-[-1] opacity-0 pointer-events-none'}`}
       />
 
-      {/* OVERLAY UI */}
+      {/* OVERLAY UI 
       {!isScanning && !error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
             <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
