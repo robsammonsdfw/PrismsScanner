@@ -105,20 +105,21 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     setStatusMessage("Starting 3D Camera...");
   };
   
-  // === CLEAN useEffect - no circular JSON error ===
-// === FIXED useEffect - uses string ID + safe logging ===
+// === BREADCRUMB DEBUG VERSION - replace your current useEffect ===
 useEffect(() => {
   if (!isScanning || !prismInstance || !sessionInfo) return;
 
+  console.log("🔍 [Breadcrumb 1] useEffect triggered - isScanning is now true");
+
   try {
-    console.log("[Scanner] Container element ready?", !!containerRef.current);
-    console.log("[Scanner DEBUG] Starting Prism render with scanId:", sessionInfo.scanId);
+    console.log("🔍 [Breadcrumb 2] Container exists?", !!containerRef.current);
 
     if (containerRef.current) {
       containerRef.current.innerHTML = '';
+      console.log("🔍 [Breadcrumb 3] Cleared container");
     }
 
-    prismInstance.render({
+    const renderConfig = {
       apiKey: "token_based_auth", 
       scanId: sessionInfo.scanId,
       prismScanId: sessionInfo.prismScanId,
@@ -126,21 +127,33 @@ useEffect(() => {
       mode: sessionInfo.mode,
       apiBaseUrl: sessionInfo.apiBaseUrl,
       assetConfigId: sessionInfo.assetConfigId,
-      container: "prism-container",          // ← string ID (safe)
+      container: "prism-container",        // string ID (safe)
       screen: "capture",
-      onSuccess: (data: any) => onComplete(data),
+    };
+
+    console.log("🔍 [Breadcrumb 4] Calling prism.render with config:", renderConfig);
+
+    prismInstance.render({
+      ...renderConfig,
+      onSuccess: (data: any) => {
+        console.log("🔍 [Breadcrumb 5] onSuccess fired - scan completed", data);
+        onComplete(data);
+      },
       onFailure: (err: any) => {
-        console.error("[Scanner] PRISM FAILURE CALLBACK:", err);
+        console.error("🔍 [Breadcrumb 6] onFailure FIRED:", err);
         setError(err.message || "Scan failed. Please try again.");
         setIsScanning(false);
       },
       onClose: () => {
-        console.log("[Scanner] Closed by user");
+        console.log("🔍 [Breadcrumb 7] onClose fired");
         onClose();
       }
     });
+
+    console.log("🔍 [Breadcrumb 8] prism.render call completed (no crash)");
+
   } catch (e: any) {
-    console.error("[Scanner] Render Exception:", e);
+    console.error("🔍 [Breadcrumb 9] Render Exception:", e);
     setError(`Engine Error: ${e.message}`);
     setIsScanning(false);
   }
