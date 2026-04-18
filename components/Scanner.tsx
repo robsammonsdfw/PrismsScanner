@@ -105,18 +105,27 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     setStatusMessage("Starting 3D Camera...");
   };
   
-// === BREADCRUMB DEBUG VERSION - replace your current useEffect ===
+// === BETTER BREADCRUMB DEBUG - replace the entire useEffect ===
 useEffect(() => {
   if (!isScanning || !prismInstance || !sessionInfo) return;
 
   console.log("🔍 [Breadcrumb 1] useEffect triggered - isScanning is now true");
 
   try {
-    console.log("🔍 [Breadcrumb 2] Container exists?", !!containerRef.current);
+    const container = containerRef.current;
+    console.log("🔍 [Breadcrumb 2] Container exists?", !!container);
 
-    if (containerRef.current) {
-      containerRef.current.innerHTML = '';
-      console.log("🔍 [Breadcrumb 3] Cleared container");
+    if (container) {
+      container.innerHTML = '';
+
+      const rect = container.getBoundingClientRect();
+      console.log("🔍 [Breadcrumb 3] Container size & position:", {
+        width: rect.width,
+        height: rect.height,
+        top: rect.top,
+        left: rect.left,
+        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0
+      });
     }
 
     const renderConfig = {
@@ -127,7 +136,7 @@ useEffect(() => {
       mode: sessionInfo.mode,
       apiBaseUrl: sessionInfo.apiBaseUrl,
       assetConfigId: sessionInfo.assetConfigId,
-      container: "prism-container",        // string ID (safe)
+      container: "prism-container",
       screen: "capture",
     };
 
@@ -136,7 +145,7 @@ useEffect(() => {
     prismInstance.render({
       ...renderConfig,
       onSuccess: (data: any) => {
-        console.log("🔍 [Breadcrumb 5] onSuccess fired - scan completed", data);
+        console.log("🔍 [Breadcrumb 5] onSuccess fired", data);
         onComplete(data);
       },
       onFailure: (err: any) => {
