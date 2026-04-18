@@ -105,16 +105,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     setStatusMessage("Starting 3D Camera...");
   };
   
-  // NEW: Render the SDK AFTER React has updated the DOM
-// === FIXED useEffect - triggers AFTER the overlay hides ===
+  // === CLEAN useEffect - no circular JSON error ===
 useEffect(() => {
   if (!isScanning || !prismInstance || !sessionInfo) return;
 
   try {
     console.log("[Scanner] Container element ready?", !!containerRef.current);
-
-    // Safe logging - do NOT log the full object with the DOM element
-    console.log("[Scanner DEBUG] Starting Prism render with scanId:", sessionInfo.scanId);
 
     if (containerRef.current) {
       containerRef.current.innerHTML = '';
@@ -128,7 +124,7 @@ useEffect(() => {
       mode: sessionInfo.mode,
       apiBaseUrl: sessionInfo.apiBaseUrl,
       assetConfigId: sessionInfo.assetConfigId,
-      container: containerRef.current,        // DOM element (this is correct)
+      container: containerRef.current,        // DOM element
       screen: "capture",
       onSuccess: (data: any) => onComplete(data),
       onFailure: (err: any) => {
@@ -146,8 +142,8 @@ useEffect(() => {
     setError(`Engine Error: ${e.message}`);
     setIsScanning(false);
   }
-}, [isScanning, prismInstance, sessionInfo]);   // runs once isScanning becomes true  
- 
+}, [isScanning, prismInstance, sessionInfo]);
+
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
       
