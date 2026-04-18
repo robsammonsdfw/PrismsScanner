@@ -106,50 +106,48 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   };
   
   // NEW: Render the SDK AFTER React has updated the DOM
-  useEffect(() => {
-    if (!isScanning || !prismInstance || !sessionInfo) return;
-  
-    try {
-      console.log("[Scanner] Container element ready?", !!containerRef.current);
-  
-      const renderConfig = {
-        apiKey: "token_based_auth", 
-        scanId: sessionInfo.scanId,
-        prismScanId: sessionInfo.prismScanId,
-        token: sessionInfo.securityToken,
-        mode: sessionInfo.mode,
-        apiBaseUrl: sessionInfo.apiBaseUrl,
-        assetConfigId: sessionInfo.assetConfigId,
-        container: containerRef.current,        // use the actual DOM element
-        screen: "capture",
-      };
-  
-      console.log("[Scanner DEBUG] Full render config being sent to Prism:", renderConfig);
-  
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
-  
-      prismInstance.render({
-        ...renderConfig,
-        onSuccess: (data: any) => onComplete(data),
-        onFailure: (err: any) => {
-          console.error("[Scanner] PRISM FAILURE CALLBACK:", err);   // better error logging
-          setError(err.message || "Scan failed. Please try again.");
-          setIsScanning(false);
-        },
-        onClose: () => {
-          console.log("[Scanner] Closed by user");
-          onClose();
-        }
-      });
-    } catch (e: any) {
-      console.error("[Scanner] Render Exception:", e);
-      setError(`Engine Error: ${e.message}`);
-      setIsScanning(false);
-    }
-  }, [isScanning, prismInstance, sessionInfo]);   // ← triggers after isScanning changes
+// === FIXED useEffect - triggers AFTER the overlay hides ===
+useEffect(() => {
+  if (!isScanning || !prismInstance || !sessionInfo) return;
 
+  try {
+    console.log("[Scanner] Container element ready?", !!containerRef.current);
+
+    // Safe logging - do NOT log the full object with the DOM element
+    console.log("[Scanner DEBUG] Starting Prism render with scanId:", sessionInfo.scanId);
+
+    if (containerRef.current) {
+      containerRef.current.innerHTML = '';
+    }
+
+    prismInstance.render({
+      apiKey: "token_based_auth", 
+      scanId: sessionInfo.scanId,
+      prismScanId: sessionInfo.prismScanId,
+      token: sessionInfo.securityToken,
+      mode: sessionInfo.mode,
+      apiBaseUrl: sessionInfo.apiBaseUrl,
+      assetConfigId: sessionInfo.assetConfigId,
+      container: containerRef.current,        // DOM element (this is correct)
+      screen: "capture",
+      onSuccess: (data: any) => onComplete(data),
+      onFailure: (err: any) => {
+        console.error("[Scanner] PRISM FAILURE CALLBACK:", err);
+        setError(err.message || "Scan failed. Please try again.");
+        setIsScanning(false);
+      },
+      onClose: () => {
+        console.log("[Scanner] Closed by user");
+        onClose();
+      }
+    });
+  } catch (e: any) {
+    console.error("[Scanner] Render Exception:", e);
+    setError(`Engine Error: ${e.message}`);
+    setIsScanning(false);
+  }
+}, [isScanning, prismInstance, sessionInfo]);   // runs once isScanning becomes true  
+ 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
       
