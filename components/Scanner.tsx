@@ -106,11 +106,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   };
   
   // === CLEAN useEffect - no circular JSON error ===
+// === FIXED useEffect - uses string ID + safe logging ===
 useEffect(() => {
   if (!isScanning || !prismInstance || !sessionInfo) return;
 
   try {
     console.log("[Scanner] Container element ready?", !!containerRef.current);
+    console.log("[Scanner DEBUG] Starting Prism render with scanId:", sessionInfo.scanId);
 
     if (containerRef.current) {
       containerRef.current.innerHTML = '';
@@ -124,7 +126,7 @@ useEffect(() => {
       mode: sessionInfo.mode,
       apiBaseUrl: sessionInfo.apiBaseUrl,
       assetConfigId: sessionInfo.assetConfigId,
-      container: containerRef.current,        // DOM element
+      container: "prism-container",          // ← string ID (safe)
       screen: "capture",
       onSuccess: (data: any) => onComplete(data),
       onFailure: (err: any) => {
