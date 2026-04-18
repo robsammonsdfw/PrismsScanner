@@ -105,68 +105,67 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     setStatusMessage("Starting 3D Camera...");
   };
   
-// === BETTER BREADCRUMB DEBUG - replace the entire useEffect ===
-useEffect(() => {
-  if (!isScanning || !prismInstance || !sessionInfo) return;
-
-  console.log("🔍 [Breadcrumb 1] useEffect triggered - isScanning is now true");
-
-  try {
-    const container = containerRef.current;
-    console.log("🔍 [Breadcrumb 2] Container exists?", !!container);
-
-    if (container) {
-      container.innerHTML = '';
-
-      const rect = container.getBoundingClientRect();
-      console.log("🔍 [Breadcrumb 3] Container size & position:", {
-        width: rect.width,
-        height: rect.height,
-        top: rect.top,
-        left: rect.left,
-        visible: rect.width > 0 && rect.height > 0 && rect.top >= 0
-      });
-    }
-
-    const renderConfig = {
-      apiKey: "token_based_auth", 
-      scanId: sessionInfo.scanId,
-      prismScanId: sessionInfo.prismScanId,
-      token: sessionInfo.securityToken,
-      mode: sessionInfo.mode,
-      apiBaseUrl: sessionInfo.apiBaseUrl,
-      assetConfigId: sessionInfo.assetConfigId,
-      container: "prism-container",
-      screen: "capture",
-    };
-
-    console.log("🔍 [Breadcrumb 4] Calling prism.render with config:", renderConfig);
-
-    prismInstance.render({
-      ...renderConfig,
-      onSuccess: (data: any) => {
-        console.log("🔍 [Breadcrumb 5] onSuccess fired", data);
-        onComplete(data);
-      },
-      onFailure: (err: any) => {
-        console.error("🔍 [Breadcrumb 6] onFailure FIRED:", err);
-        setError(err.message || "Scan failed. Please try again.");
-        setIsScanning(false);
-      },
-      onClose: () => {
-        console.log("🔍 [Breadcrumb 7] onClose fired");
-        onClose();
+  useEffect(() => {
+    if (!isScanning || !prismInstance || !sessionInfo) return;
+  
+    console.log("🔍 [Breadcrumb 1] useEffect triggered - isScanning is now true");
+  
+    try {
+      const container = containerRef.current;
+      console.log("🔍 [Breadcrumb 2] Container exists?", !!container);
+  
+      if (container) {
+        container.innerHTML = '';
+        console.log("🔍 [Breadcrumb 3] Cleared container");
       }
-    });
-
-    console.log("🔍 [Breadcrumb 8] prism.render call completed (no crash)");
-
-  } catch (e: any) {
-    console.error("🔍 [Breadcrumb 9] Render Exception:", e);
-    setError(`Engine Error: ${e.message}`);
-    setIsScanning(false);
-  }
-}, [isScanning, prismInstance, sessionInfo]);
+  
+      const renderConfig = {
+        apiKey: "token_based_auth", 
+        scanId: sessionInfo.scanId,
+        prismScanId: sessionInfo.prismScanId,
+        token: sessionInfo.securityToken,
+        mode: sessionInfo.mode,
+        apiBaseUrl: sessionInfo.apiBaseUrl,
+        assetConfigId: sessionInfo.assetConfigId,
+        container: "prism-container",
+        screen: "capture",
+      };
+  
+      console.log("🔍 [Breadcrumb 4] Calling prism.render with config:", renderConfig);
+  
+      prismInstance.render({
+        ...renderConfig,
+        onSuccess: (data: any) => {
+          console.log("🔍 [Breadcrumb 5] onSuccess fired", data);
+          onComplete(data);
+        },
+        onFailure: (err: any) => {
+          console.error("🔍 [Breadcrumb 6] onFailure FIRED:", err);
+          setError(err.message || "Scan failed. Please try again.");
+          setIsScanning(false);
+        },
+        onClose: () => {
+          console.log("🔍 [Breadcrumb 7] onClose fired");
+          onClose();
+        }
+      });
+  
+      console.log("🔍 [Breadcrumb 8] prism.render call completed (no crash)");
+  
+      // NEW BREADCRUMB — check if SDK actually attached anything
+      setTimeout(() => {
+        if (container) {
+          console.log("🔍 [Breadcrumb 9] Container children after render:", container.children.length);
+          console.log("🔍 [Breadcrumb 9] Container innerHTML length:", container.innerHTML.length);
+        }
+      }, 500);
+  
+    } catch (e: any) {
+      console.error("🔍 [Breadcrumb 10] Render Exception:", e);
+      setError(`Engine Error: ${e.message}`);
+      setIsScanning(false);
+    }
+  }, [isScanning, prismInstance, sessionInfo]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
