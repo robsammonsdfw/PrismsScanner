@@ -173,7 +173,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
             backgroundColor: 'transparent', 
             touchAction: 'none'
         }}
-        className="absolute inset-0 w-full h-full z-[999]"
+        className="absolute inset-0 w-full h-full z-0"
         
         />
 
