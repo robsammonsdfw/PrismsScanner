@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Prism SDK Test</title>
+  <style>body, #prism-container { margin:0; padding:0; width:100vw; height:100vh; background:#000; }</style>
+</head>
+<body>
+  <div id="prism-container"></div>
+
+  <script src="https://cdn.prismlabs.tech/prism.js"></script>
+  <script>
+    window.addEventListener('onPrismLoaded', (e) => {
+      const prism = e.detail.prism;
+      console.log("Prism SDK loaded", prism);
+
+      prism.render({
+        apiKey: "token_based_auth",
+        scanId: "YOUR_SCAN_ID_HERE",          // replace with any scanId from your logs
+        prismScanId: "YOUR_PRISM_SCAN_ID_HERE", // replace with the prismScanId from logs
+        token: "user_1",
+        mode: "production",
+        apiBaseUrl: "https://api.hosted.prismlabs.tech",
+        assetConfigId: "ee651a9e-6de1-4621-a5c9-5d31ca874718",
+        container: "prism-container",
+        screen: "capture"
+      });
+    });
+  </script>
+</body>
+</html>

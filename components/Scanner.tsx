@@ -130,7 +130,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         mode: sessionInfo.mode,
         apiBaseUrl: sessionInfo.apiBaseUrl,
         assetConfigId: sessionInfo.assetConfigId,
-        container: container,                  // DOM element
+        container: "prism-container",                  // DOM element
         screen: "capture",
         onSuccess: (data: any) => {
           console.log("🔍 [Breadcrumb 5] onSuccess fired", data);
@@ -159,7 +159,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       console.error("🔍 [Breadcrumb 10] Exception:", e);
     }
   }, [isScanning, prismInstance, sessionInfo]);
-  
+
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
       
