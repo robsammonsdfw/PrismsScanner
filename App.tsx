@@ -46,7 +46,7 @@ const App: React.FC = () => {
     } else {
         // 3. Not logged in, redirect to Main App
         // Ensure this URL matches your main app's address exactly
-        window.location.href = 'https://main.embracehealth.ai';
+        window.location.href = 'https://app.embracehealth.ai';
     }
   }, []);
 

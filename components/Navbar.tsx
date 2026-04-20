@@ -5,16 +5,18 @@ export const Navbar: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
 
     // Explicitly separate the links to ensure correct navigation flow
-    const mainMenuLink = "https://main.embracehealth.ai";
+    const mainMenuLink = "https://app.embracehealth.ai";
 
     return (
         <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between h-16">
                     <div className="flex items-center cursor-pointer" onClick={() => window.location.href = mainMenuLink}>
-                        <span className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-cyan-500">
-                            EmbraceHealth
-                        </span>
+                        <img 
+                            src="/ehmodernlogo.png" 
+                            alt="EmbraceHealth" 
+                            className="h-9 w-auto"
+                        />
                     </div>
 
                     {/* Desktop Menu */}
