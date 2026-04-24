@@ -98,11 +98,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   // --- HANDLER: Start Scanner ---
   const handleStartScanner = () => {
-    if (!isReady) return;
-    if (isScanning) return; 
+    if (!prismInstance) return;
   
     setIsScanning(true);
-    setStatusMessage("Starting 3D Camera...");
+    prismInstance.render({
+
+    });
   };
   
   useEffect(() => {
@@ -215,16 +216,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
                 </div>
 
                 <button 
-                    onClick={handleStartScanner}
-                    disabled={!isReady}
-                    className={`w-full py-5 rounded-2xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2
-                        ${isReady 
-                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer' 
-                            : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                        }`}
-                >
-                    {isReady ? "Initialize Scanner" : "Loading..."}
-                </button>
+  className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+  onClick={handleStartScanner}
+>
+  Start Scan
+</button>
                 
                 <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
                     Cancel
