@@ -6,7 +6,6 @@ interface ScannerProps {
   onComplete: (results: any) => void;
 }
 
-// Add this type declaration so TypeScript knows about window.prism
 declare global {
   interface Window {
     prism?: any;
@@ -29,8 +28,22 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         setPrismInstance(prism);
 
         // Minimal render call - as recommended by Prism developer
-        console.log("✅ Calling prism.render({}) with minimal config");
-        prism.render({});
+        console.log("✅ Calling prism.render({}) with minimal config + callbacks");
+        prism.render({
+          onSuccess: (data: any) => {
+            console.log("✅ Prism onSuccess fired - scan completed", data);
+            onComplete(data);   // This is the key line that was missing
+          },
+          onFailure: (err: any) => {
+            console.error("❌ Prism onFailure:", err);
+            setError(err.message || "Scan failed. Please try again.");
+            setIsScanning(false);
+          },
+          onClose: () => {
+            console.log("Prism onClose fired");
+            onClose();
+          }
+        });
       }
     };
 
@@ -53,7 +66,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     return () => {
       window.removeEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
     };
-  }, []);
+  }, [onComplete, onClose]);
 
   // Simple handler - the SDK will open its own modal
   const handleStartScan = () => {

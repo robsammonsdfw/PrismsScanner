@@ -6,6 +6,7 @@ import { OnboardingGoals } from './components/OnboardingGoals';
 import { DigitalTwinIntro } from './components/DigitalTwinIntro';
 import { Dashboard } from './components/Dashboard';
 import { saveBodyScan, checkAuthToken, setAuthToken } from './services/api';
+import { ScanHistory } from './components/ScanHistory';
 import { 
   Smartphone, 
   ShieldCheck, 
@@ -21,6 +22,7 @@ enum AppState {
   SCANNING,
   SAVING,
   DASHBOARD,
+  SCAN_HISTORY,
   REPORT
 }
 
@@ -151,6 +153,11 @@ const App: React.FC = () => {
       );
   }
 
+  // 4.5 GET SCAN HISTORY LIST
+  if (appState === AppState.SCAN_HISTORY) {
+    return <ScanHistory />;
+  }
+  
   // 5. DASHBOARD (Post-Scan Home)
   if (appState === AppState.DASHBOARD) {
     return (
