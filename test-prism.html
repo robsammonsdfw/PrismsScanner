@@ -1,30 +1,51 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Prism SDK Test</title>
-  <style>body, #prism-container { margin:0; padding:0; width:100vw; height:100vh; background:#000; }</style>
+  <meta charset="UTF-8" />
+  <title>Prism Web Scan – Debug</title>
+  <style>
+    body { margin:0; padding:20px; background:#111; color:#fff; font-family:sans-serif; }
+    button.prism-button { padding:20px 40px; font-size:18px; background:#10b981; border:none; border-radius:12px; color:white; cursor:pointer; }
+  </style>
 </head>
 <body>
-  <div id="prism-container"></div>
 
-  <script src="https://cdn.prismlabs.tech/prism.js"></script>
+  <h1>Prism SDK Test (Minimal)</h1>
+  <button class="prism-button">Start scan</button>
+
   <script>
-    window.addEventListener('onPrismLoaded', (e) => {
-      const prism = e.detail.prism;
-      console.log("Prism SDK loaded", prism);
+    console.log("🔍 [Debug] Page loaded - attaching event listener FIRST");
 
-      prism.render({
-        apiKey: "token_based_auth",
-        scanId: "0d61c5fb-5ad2-4837-bbae-bab664599a5d",         
-        prismScanId: "70f119c0-43ba-4ab7-af19-0f5f93ddd334", 
-        token: "user_1",
-        mode: "production",
-        apiBaseUrl: "https://api.hosted.prismlabs.tech",
-        assetConfigId: "ee651a9e-6de1-4621-a5c9-5d31ca874718",
-        container: "prism-container",
-        screen: "capture"
-      });
+    // Attach listener BEFORE loading the script
+    window.addEventListener("onPrismLoaded", function (event) {
+      console.log("🔍 [Debug] onPrismLoaded event FIRED!", event.detail);
+      const prism = event.detail.prism;
+      if (prism) {
+        console.log("🔍 [Debug] Prism object received, calling render({})");
+        prism.render({});
+        console.log("🔍 [Debug] prism.render({}) called with minimal config");
+      } else {
+        console.error("🔍 [Debug] No prism object in event");
+      }
     });
+
+    // Load Prism SDK
+    (function () {
+      const script = document.createElement("script");
+      script.src = "https://cdn.prismlabs.tech/prism.js";
+      script.async = true;
+
+      script.onload = () => {
+        console.log("✅ [Debug] Prism SDK script loaded successfully");
+      };
+
+      script.onerror = () => {
+        console.error("❌ [Debug] Failed to load Prism SDK script");
+      };
+
+      document.body.appendChild(script);
+    })();
   </script>
+
 </body>
 </html>

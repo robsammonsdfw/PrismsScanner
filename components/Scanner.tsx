@@ -1,6 +1,4 @@
-
 import React, { useEffect, useRef, useState } from 'react';
-import { PrismConfig } from '../types';
 import { initScanSession } from '../services/api';
 import { Loader2, AlertTriangle, RefreshCcw, Camera, CheckCircle2, LogOut } from 'lucide-react';
 
@@ -10,53 +8,41 @@ interface ScannerProps {
 }
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
-  // --- STATE ---
-  const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [prismInstance, setPrismInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState<number>(0);
-  
-  // UI Flow
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string>("Initializing secure tunnel...");
 
-  // --- REFS ---
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // CHECKLIST ITEM #4: Strict Mode Guard
-  // Prevents double-invocation of prism.render which causes SDK crashes
-  const scanInitRef = useRef<boolean>(false);
 
-  // --- EFFECT 1: Load SDK ---
+  // 1. Load Prism SDK Script & Listen for Event
   useEffect(() => {
     const handlePrismLoaded = (event: CustomEvent) => {
       console.log("[Scanner] Prism SDK Event Received", event.detail);
       if (event.detail && event.detail.prism) {
-        setPrismInstance(event.detail.prism);
+        const prism = event.detail.prism;
+        setPrismInstance(prism);
+
+        // Minimal render call - as per Prism developer
+        console.log("✅ Calling prism.render({}) with minimal config");
+        prism.render({});
       }
     };
 
     window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
 
-    // Use the CDN version as recommended by Prism Devs
     const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
     let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement;
-    
+
     if (!script) {
       console.log("[Scanner] Injecting Prism SDK Script...");
       script = document.createElement("script");
       script.src = scriptUrl;
       script.async = true;
-      script.onload = () => console.log("[Scanner] Script tag loaded");
-      script.onerror = () => setError("Failed to load 3D Scanning Engine. Check your connection.");
       document.body.appendChild(script);
-    } else {
-        // @ts-ignore
-        if (window.prism) {
-            console.log("[Scanner] Prism global found");
-            // @ts-ignore
-            setPrismInstance(window.prism);
-        }
+    } else if (window.prism) {
+      setPrismInstance(window.prism);
+      window.prism.render({});
     }
 
     return () => {
@@ -64,202 +50,77 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     };
   }, []);
 
-  // 2. Fetch Backend Session — RESTORED ORIGINAL DEVICE DETECTION
-  useEffect(() => {
-    const fetchSession = async () => {
-      setError(null);
-      try {
-        const userAgent = navigator.userAgent || '';
-        
-        // Original working detection logic you described
-        const device = /iPad|iPhone|iPod/.test(userAgent) 
-          ? 'IPHONE_SCANNER' 
-          : 'ANDROID_SCANNER';
-
-        console.log(`[Scanner] Device detected: ${device}`);
-        console.log(`[Scanner] Full userAgent: ${userAgent}`);
-
-        const data = await initScanSession(device);
-        setSessionInfo(data);
-      } catch (err: any) {
-        console.error(err);
-        if (err.message && err.message.includes("Session expired")) {
-          setError("Session expired");
-        } else {
-          setError(err.message || "Failed to connect to scanning server.");
-        }
-      }
-    };
-    fetchSession();
-  }, [retryKey]);
-
-  const isReady = !!sessionInfo && !!prismInstance;
-  const isAuthError = error === "Session expired";
-
-  // --- HANDLER: Start Scanner ---
-  const handleStartScanner = () => {
-    if (!prismInstance) return;
-  
+  // Simple button handler - the SDK will open the modal itself
+  const handleStartScan = () => {
+    console.log("Prism button clicked - SDK should open modal");
     setIsScanning(true);
-    prismInstance.render({
-
-    });
   };
-  
-  useEffect(() => {
-    if (!isScanning || !prismInstance || !sessionInfo) return;
-  
-    console.log("🔍 [Breadcrumb 1] useEffect triggered");
-  
-    const container = containerRef.current;   // ← moved outside try so setTimeout can see it
-  
-    try {
-      console.log("🔍 [Breadcrumb 2] Container exists?", !!container);
-  
-      if (container) {
-        container.innerHTML = '';
-        console.log("🔍 [Breadcrumb 3] Cleared container");
-      }
-  
-      console.log("🔍 [Breadcrumb 4] Calling prism.render (using DOM element)");
-  
-      prismInstance.render({
-        apiKey: "token_based_auth", 
-        scanId: sessionInfo.scanId,
-        prismScanId: sessionInfo.prismScanId,
-        token: sessionInfo.securityToken,
-        mode: sessionInfo.mode,
-        apiBaseUrl: sessionInfo.apiBaseUrl,
-        assetConfigId: sessionInfo.assetConfigId,
-        container: "prism-container",                  // DOM element
-        screen: "capture",
-        onSuccess: (data: any) => {
-          console.log("🔍 [Breadcrumb 5] onSuccess fired", data);
-          onComplete(data);
-        },
-        onFailure: (err: any) => {
-          console.error("🔍 [Breadcrumb 6] onFailure FIRED", err);
-          setError(err.message || "Scan failed. Please try again.");
-          setIsScanning(false);
-        },
-        onClose: () => {
-          console.log("🔍 [Breadcrumb 7] onClose fired");
-          onClose();
-        }
-      });
-  
-      console.log("🔍 [Breadcrumb 8] render call completed");
-  
-      setTimeout(() => {
-        if (container) {
-          console.log("🔍 [Breadcrumb 9] Container children after render:", container.children.length);
-        }
-      }, 800);
-  
-    } catch (e: any) {
-      console.error("🔍 [Breadcrumb 10] Exception:", e);
-    }
-  }, [isScanning, prismInstance, sessionInfo]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
-      
-      {/* 
-         SCANNER CONTAINER
-         CHECKLIST ITEM #2: Visibility First
-         - z-index: 999 (High priority)
-         - opacity: 100 (Visible)
-         - pointer-events: auto (Interactable)
-         - Absolute positioning to fill the screen
-      */}
+
+      {/* Prism Container - must be present */}
       <div 
         id="prism-container"
         ref={containerRef}
         style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            width: '100%', 
-            height: '100%',
-            backgroundColor: 'transparent', 
-            touchAction: 'none'
+          position: 'absolute', 
+          top: 0, 
+          left: 0, 
+          width: '100%', 
+          height: '100%',
+          backgroundColor: 'transparent', 
+          touchAction: 'none'
         }}
         className="absolute inset-0 w-full h-full z-0"
-        
-        />
+      />
 
-      {/* OVERLAY UI — RESTORED */}
+      {/* Overlay UI */}
       {!isScanning && !error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
-            <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
-                <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
-                    {isReady ? (
-                    <Camera className="w-10 h-10 text-emerald-400" />
-                    ) : (
-                    <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
-                    )}
-                </div>
-
-                <h2 className="text-2xl font-bold mb-3 tracking-tight">
-                    {isReady ? "Scanner Ready" : "System Check"}
-                </h2>
-                
-                <div className="flex flex-col gap-2 text-sm text-zinc-400 mb-8 w-full">
-                    <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
-                        <span>Secure Tunnel</span>
-                        {sessionInfo ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
-                    </div>
-                    <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
-                        <span>3D Engine</span>
-                        {prismInstance ? <CheckCircle2 className="w-4 h-4 text-emerald-500"/> : <Loader2 className="w-3 h-3 animate-spin"/>}
-                    </div>
-                </div>
-
-                <button 
-  className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white"
-  onClick={handleStartScanner}
->
-  Start Scan
-</button>
-                
-                <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
-                    Cancel
-                </button>
+          <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
+            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
+              <Camera className="w-10 h-10 text-emerald-400" />
             </div>
+
+            <h2 className="text-2xl font-bold mb-3 tracking-tight">Scanner Ready</h2>
+
+            <div className="flex flex-col gap-2 text-sm text-zinc-400 mb-8 w-full">
+              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
+                <span>Secure Tunnel</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              </div>
+              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
+                <span>3D Engine</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              </div>
+            </div>
+
+            {/* This is the important button */}
+            <button 
+              className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer"
+              onClick={handleStartScan}
+            >
+              Start Scan
+            </button>
+
+            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
+              Cancel
+            </button>
+          </div>
         </div>
       )}
-      {/* ERROR UI */}
 
+      {/* Error UI */}
       {error && (
         <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md">
-            <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
-                {isAuthError ? (
-                    <LogOut className="w-12 h-12 text-zinc-400 mb-4" />
-                ) : (
-                    <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
-                )}
-                
-                <p className="text-white font-semibold mb-6">{isAuthError ? "For security, your session has timed out." : error}</p>
-                
-                {!isAuthError && (
-                    <div className="flex flex-col gap-3 w-full">
-                        <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold flex items-center justify-center gap-2">
-                            <RefreshCcw className="w-4 h-4" /> Try Again
-                        </button>
-                        <button onClick={onClose} className="w-full py-3 bg-zinc-900 text-zinc-500 rounded-xl font-medium">Cancel</button>
-                    </div>
-                )}
-                {isAuthError && (
-                    <div className="flex flex-col gap-3 w-full">
-                        <button 
-                            onClick={() => window.location.href = 'https://main.embracehealth.ai'}
-                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-colors"
-                        >
-                            Log In Again
-                        </button>
-                    </div>
-                )}
-            </div>
+          <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
+            <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+            <p className="text-white font-semibold mb-6">{error}</p>
+            <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold">
+              Try Again
+            </button>
+          </div>
         </div>
       )}
     </div>
