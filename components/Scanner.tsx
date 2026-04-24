@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { initScanSession } from '../services/api';
 import { Loader2, AlertTriangle, RefreshCcw, Camera, CheckCircle2, LogOut } from 'lucide-react';
 
 interface ScannerProps {
@@ -7,10 +6,16 @@ interface ScannerProps {
   onComplete: (results: any) => void;
 }
 
+// Add this type declaration so TypeScript knows about window.prism
+declare global {
+  interface Window {
+    prism?: any;
+  }
+}
+
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [prismInstance, setPrismInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState<number>(0);
   const [isScanning, setIsScanning] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -23,7 +28,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         const prism = event.detail.prism;
         setPrismInstance(prism);
 
-        // Minimal render call - as per Prism developer
+        // Minimal render call - as recommended by Prism developer
         console.log("✅ Calling prism.render({}) with minimal config");
         prism.render({});
       }
@@ -50,16 +55,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     };
   }, []);
 
-  // Simple button handler - the SDK will open the modal itself
+  // Simple handler - the SDK will open its own modal
   const handleStartScan = () => {
-    console.log("Prism button clicked - SDK should open modal");
+    console.log("Prism button clicked");
     setIsScanning(true);
   };
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
 
-      {/* Prism Container - must be present */}
+      {/* Prism Container */}
       <div 
         id="prism-container"
         ref={containerRef}
@@ -96,7 +101,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
               </div>
             </div>
 
-            {/* This is the important button */}
+            {/* Prism-required button */}
             <button 
               className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer"
               onClick={handleStartScan}
@@ -117,7 +122,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
           <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
             <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
             <p className="text-white font-semibold mb-6">{error}</p>
-            <button onClick={() => setRetryKey(k => k + 1)} className="w-full py-3 bg-white text-black rounded-xl font-bold">
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full py-3 bg-white text-black rounded-xl font-bold"
+            >
               Try Again
             </button>
           </div>
