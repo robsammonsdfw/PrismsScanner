@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, AlertTriangle, RefreshCcw, Camera, CheckCircle2, LogOut } from 'lucide-react';
+import { Loader2, AlertTriangle, Camera, CheckCircle2 } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -13,34 +13,32 @@ declare global {
 }
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
-  const [prismInstance, setPrismInstance] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Load Prism SDK Script & Listen for Event
+  // Load Prism SDK
   useEffect(() => {
     const handlePrismLoaded = (event: CustomEvent) => {
       console.log("[Scanner] Prism SDK Event Received", event.detail);
       if (event.detail && event.detail.prism) {
         const prism = event.detail.prism;
-        setPrismInstance(prism);
 
-        // Minimal render call - as recommended by Prism developer
-        console.log("✅ Calling prism.render({}) with minimal config + callbacks");
+        // Minimal config + callbacks
         prism.render({
           onSuccess: (data: any) => {
-            console.log("✅ Prism onSuccess fired - scan completed", data);
-            onComplete(data);   // This is the key line that was missing
+            console.log("✅ Prism onSuccess fired with results:", data);
+            onComplete(data);        // ← This saves the scan and moves to dashboard
+            onClose();
           },
           onFailure: (err: any) => {
             console.error("❌ Prism onFailure:", err);
-            setError(err.message || "Scan failed. Please try again.");
+            setError(err.message || "Scan failed");
             setIsScanning(false);
           },
           onClose: () => {
-            console.log("Prism onClose fired");
+            console.log("Prism modal closed by user");
             onClose();
           }
         });
@@ -53,31 +51,24 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement;
 
     if (!script) {
-      console.log("[Scanner] Injecting Prism SDK Script...");
       script = document.createElement("script");
       script.src = scriptUrl;
       script.async = true;
       document.body.appendChild(script);
     } else if (window.prism) {
-      setPrismInstance(window.prism);
       window.prism.render({});
     }
 
-    return () => {
-      window.removeEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
-    };
+    return () => window.removeEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
   }, [onComplete, onClose]);
 
-  // Simple handler - the SDK will open its own modal
   const handleStartScan = () => {
-    console.log("Prism button clicked");
     setIsScanning(true);
   };
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
 
-      {/* Prism Container */}
       <div 
         id="prism-container"
         ref={containerRef}
@@ -93,53 +84,48 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         className="absolute inset-0 w-full h-full z-0"
       />
 
-      {/* Overlay UI */}
+      {/* Overlay */}
       {!isScanning && !error && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
           <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
             <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
               <Camera className="w-10 h-10 text-emerald-400" />
             </div>
 
-            <h2 className="text-2xl font-bold mb-3 tracking-tight">Scanner Ready</h2>
+            <h2 className="text-2xl font-bold mb-3">Scanner Ready</h2>
 
             <div className="flex flex-col gap-2 text-sm text-zinc-400 mb-8 w-full">
-              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
+              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg">
                 <span>Secure Tunnel</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               </div>
-              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
+              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg">
                 <span>3D Engine</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               </div>
             </div>
 
-            {/* Prism-required button */}
             <button 
-              className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer"
+              className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white"
               onClick={handleStartScan}
             >
               Start Scan
             </button>
 
-            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
+            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300">
               Cancel
             </button>
           </div>
         </div>
       )}
 
-      {/* Error UI */}
       {error && (
-        <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md">
-          <div className="flex flex-col items-center p-8 text-center max-w-xs mx-auto animate-in fade-in">
-            <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/95">
+          <div className="text-center">
+            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <p className="text-white font-semibold mb-6">{error}</p>
-            <button 
-              onClick={() => window.location.reload()} 
-              className="w-full py-3 bg-white text-black rounded-xl font-bold"
-            >
-              Try Again
+            <button onClick={onClose} className="px-8 py-3 bg-white text-black rounded-xl font-bold">
+              Close
             </button>
           </div>
         </div>
