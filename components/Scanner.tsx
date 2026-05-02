@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { initScanSession } from '../services/api';
 import { Loader2, AlertTriangle, Camera, CheckCircle2 } from 'lucide-react';
 
 interface ScannerProps {
@@ -15,52 +16,74 @@ declare global {
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [session, setSession] = useState<any>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 1. Load Prism SDK + init session
   useEffect(() => {
-    const handlePrismLoaded = (event: CustomEvent) => {
-      console.log("[Scanner] Prism SDK Event Received", event.detail);
-      if (event.detail && event.detail.prism) {
-        const prism = event.detail.prism;
+    const loadSessionAndSDK = async () => {
+      try {
+        console.log("[Scanner] Fetching scan session from backend...");
+        const sessionData = await initScanSession();   // calls your Lambda /init
+        setSession(sessionData);
+        console.log("[Scanner] Session received:", sessionData);
 
-        prism.render({
-          onSuccess: (data: any) => {
-            alert("✅ onSuccess FIRED - Scan results received!");   // ← Temporary alert for iPhone
-            console.log("✅ Prism onSuccess fired with results:", data);
-            onComplete(data);
-            onClose();
-          },
-          onFailure: (err: any) => {
-            alert("❌ onFailure FIRED: " + (err?.message || "Unknown error"));
-            console.error("❌ Prism onFailure:", err);
-            setError(err?.message || "Scan failed");
-          },
-          onClose: () => {
-            alert("Prism modal closed by user");
-            console.log("Prism onClose fired");
-            onClose();
+        // 2. Listen for Prism SDK
+        const handlePrismLoaded = (event: CustomEvent) => {
+          if (event.detail && event.detail.prism) {
+            const prism = event.detail.prism;
+
+            prism.render({
+              apiKey: "token_based_auth",
+              scanId: sessionData.scanId,
+              prismScanId: sessionData.prismScanId || sessionData.scanId,
+              token: sessionData.securityToken,
+              mode: sessionData.mode || "production",
+              apiBaseUrl: sessionData.apiBaseUrl || sessionData.baseUrl,
+              assetConfigId: sessionData.assetConfigId,
+              container: "prism-container",
+              screen: "capture",
+
+              onSuccess: (data: any) => {
+                alert("✅ onSuccess FIRED — scan results received!");
+                console.log("✅ Prism onSuccess:", data);
+                onComplete(data);
+                onClose();
+              },
+              onFailure: (err: any) => {
+                alert("❌ onFailure: " + (err?.message || "Unknown"));
+                console.error("❌ Prism onFailure:", err);
+                setError(err?.message || "Scan failed");
+              },
+              onClose: () => {
+                alert("Prism modal closed by user");
+                onClose();
+              }
+            });
           }
-        });
+        };
+
+        window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
+
+        // Inject script if not already present
+        const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
+        if (!document.querySelector(`script[src="${scriptUrl}"]`)) {
+          const script = document.createElement("script");
+          script.src = scriptUrl;
+          script.async = true;
+          document.body.appendChild(script);
+        }
+      } catch (err: any) {
+        console.error("[Scanner] Session init failed", err);
+        setError("Failed to start scanner session");
       }
     };
 
-    window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
-
-    const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
-    let script = document.querySelector(`script[src="${scriptUrl}"]`) as HTMLScriptElement;
-
-    if (!script) {
-      script = document.createElement("script");
-      script.src = scriptUrl;
-      script.async = true;
-      document.body.appendChild(script);
-    } else if (window.prism) {
-      window.prism.render({});
-    }
+    loadSessionAndSDK();
 
     return () => {
-      window.removeEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
+      window.removeEventListener('onPrismLoaded', (() => {}) as EventListener);
     };
   }, [onComplete, onClose]);
 
