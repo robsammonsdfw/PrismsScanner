@@ -18,26 +18,27 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load Prism SDK and initialize
   useEffect(() => {
     const handlePrismLoaded = (event: CustomEvent) => {
       console.log("[Scanner] Prism SDK Event Received", event.detail);
       if (event.detail && event.detail.prism) {
         const prism = event.detail.prism;
 
-        // Minimal config + callbacks (this is what was missing)
         prism.render({
           onSuccess: (data: any) => {
-            console.log("✅ Prism onSuccess fired - scan completed", data);
-            onComplete(data);     // ← This saves the scan and goes to dashboard/report
+            alert("✅ onSuccess FIRED - Scan results received!");   // ← Temporary alert for iPhone
+            console.log("✅ Prism onSuccess fired with results:", data);
+            onComplete(data);
             onClose();
           },
           onFailure: (err: any) => {
+            alert("❌ onFailure FIRED: " + (err?.message || "Unknown error"));
             console.error("❌ Prism onFailure:", err);
-            setError(err.message || "Scan failed");
+            setError(err?.message || "Scan failed");
           },
           onClose: () => {
-            console.log("Prism modal closed by user");
+            alert("Prism modal closed by user");
+            console.log("Prism onClose fired");
             onClose();
           }
         });
@@ -85,7 +86,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         className="absolute inset-0 w-full h-full z-0"
       />
 
-      {/* Overlay */}
       {!isScanning && !error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
           <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
