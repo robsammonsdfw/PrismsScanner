@@ -16,7 +16,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
 
-  // 1. Load Prism SDK
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Load Prism SDK and initialize
   useEffect(() => {
     const handlePrismLoaded = (event: CustomEvent) => {
       console.log("[Scanner] Prism SDK Event Received", event.detail);
@@ -26,13 +28,13 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         // Minimal config + callbacks (this is what was missing)
         prism.render({
           onSuccess: (data: any) => {
-            console.log("✅ Prism onSuccess fired with results:", data);
-            onComplete(data);   // ← This saves the scan and moves to dashboard/report
+            console.log("✅ Prism onSuccess fired - scan completed", data);
+            onComplete(data);     // ← This saves the scan and goes to dashboard/report
             onClose();
           },
           onFailure: (err: any) => {
             console.error("❌ Prism onFailure:", err);
-            setError(err.message || "Scan failed. Please try again.");
+            setError(err.message || "Scan failed");
           },
           onClose: () => {
             console.log("Prism modal closed by user");
@@ -70,6 +72,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
       <div 
         id="prism-container"
+        ref={containerRef}
         style={{ 
           position: 'absolute', 
           top: 0, 
