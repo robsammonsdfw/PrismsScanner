@@ -171,3 +171,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     </div>
   );
 };
+
+
+
+
+
