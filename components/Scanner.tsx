@@ -16,6 +16,8 @@ declare global {
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [debugLog, setDebugLog] = useState<string[]>(["Scanner mounted"]);
   const [error, setError] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [sessionData, setSessionData] = useState<any>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -29,30 +31,15 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
     const load = async () => {
       try {
-        const sessionData = await initScanSession();
+        const data = await initScanSession();
+        setSessionData(data);
         addLog("2. Session received from backend ✅");
 
         const handlePrismLoaded = (event: CustomEvent) => {
           addLog("3. Prism SDK loaded - calling minimal render()");
           if (event.detail?.prism) {
             const prism = event.detail.prism;
-
-            // MINIMAL CONFIG — exactly what the developer said
-            prism.render({
-              onSuccess: (data: any) => {
-                addLog("4. ✅ onSuccess FIRED — View Results clicked!");
-                onComplete(data);
-                onClose();
-              },
-              onFailure: (err: any) => {
-                addLog("❌ onFailure: " + (err?.message || "Unknown"));
-                setError(err?.message || "Scan failed");
-              },
-              onClose: () => {
-                addLog("Prism modal closed by user");
-                onClose();
-              }
-            });
+            prism.render({});   // ← minimal as developer instructed
           }
         };
 
@@ -73,12 +60,26 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     };
 
     load();
-  }, [onComplete, onClose]);
+  }, []);
+
+  const handleStartScan = () => {
+    addLog("Start Scan button clicked");
+    setIsScanning(true);
+  };
+
+  const handleViewResults = () => {
+    addLog("4. User clicked 'View My Scans' - saving and navigating");
+    if (sessionData) {
+      onComplete(sessionData);   // saves the scan and goes to dashboard
+    } else {
+      onComplete({}); 
+    }
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
 
-      {/* Prism container */}
       <div 
         id="prism-container"
         ref={containerRef}
@@ -94,27 +95,48 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         ))}
       </div>
 
-      {/* Overlay with prism-button */}
-      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
-        <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
-          <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
-            <Camera className="w-10 h-10 text-emerald-400" />
+      {/* Overlay */}
+      {!isScanning && !error && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
+          <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
+            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
+              <Camera className="w-10 h-10 text-emerald-400" />
+            </div>
+            <h2 className="text-2xl font-bold mb-3">Scanner Ready</h2>
+
+            <button 
+              className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+              onClick={handleStartScan}
+            >
+              Start Scan
+            </button>
+
+            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300">
+              Cancel
+            </button>
           </div>
-
-          <h2 className="text-2xl font-bold mb-3">Scanner Ready</h2>
-
-          {/* This button MUST have class "prism-button" */}
-          <button 
-            className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white"
-          >
-            Start Scan
-          </button>
-
-          <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300">
-            Cancel
-          </button>
         </div>
-      </div>
+      )}
+
+      {/* After scan starts - show View My Scans button */}
+      {isScanning && !error && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
+          <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
+            <h2 className="text-2xl font-bold mb-8">Scan in progress...</h2>
+            
+            <button 
+              onClick={handleViewResults}
+              className="w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+            >
+              View My Scans
+            </button>
+
+            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-900/95">
