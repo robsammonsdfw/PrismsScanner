@@ -14,24 +14,26 @@ declare global {
 }
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
+  const [debugLog, setDebugLog] = useState<string[]>(["Scanner mounted"]);
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [session, setSession] = useState<any>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const addLog = (msg: string) => {
+    console.log(msg);
+    setDebugLog(prev => [...prev, msg]);
+  };
 
-  // 1. Load Prism SDK + init session
   useEffect(() => {
-    const loadSessionAndSDK = async () => {
-      try {
-        console.log("[Scanner] Fetching scan session from backend...");
-        const sessionData = await initScanSession();   // calls your Lambda /init
-        setSession(sessionData);
-        console.log("[Scanner] Session received:", sessionData);
+    addLog("1. Starting initScanSession...");
 
-        // 2. Listen for Prism SDK
+    const load = async () => {
+      try {
+        const sessionData = await initScanSession();
+        addLog("2. Session received from backend ✅");
+
         const handlePrismLoaded = (event: CustomEvent) => {
-          if (event.detail && event.detail.prism) {
+          addLog("3. Prism SDK loaded - calling render()");
+          if (event.detail?.prism) {
             const prism = event.detail.prism;
 
             prism.render({
@@ -46,18 +48,16 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
               screen: "capture",
 
               onSuccess: (data: any) => {
-                alert("✅ onSuccess FIRED — scan results received!");
-                console.log("✅ Prism onSuccess:", data);
+                addLog("4. ✅ onSuccess FIRED - View Results clicked!");
                 onComplete(data);
                 onClose();
               },
               onFailure: (err: any) => {
-                alert("❌ onFailure: " + (err?.message || "Unknown"));
-                console.error("❌ Prism onFailure:", err);
+                addLog("❌ onFailure: " + (err?.message || "Unknown"));
                 setError(err?.message || "Scan failed");
               },
               onClose: () => {
-                alert("Prism modal closed by user");
+                addLog("Prism modal closed by user");
                 onClose();
               }
             });
@@ -66,21 +66,21 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
 
         window.addEventListener('onPrismLoaded', handlePrismLoaded as EventListener);
 
-        // Inject script if not already present
         const scriptUrl = "https://cdn.prismlabs.tech/prism.js";
         if (!document.querySelector(`script[src="${scriptUrl}"]`)) {
           const script = document.createElement("script");
           script.src = scriptUrl;
           script.async = true;
           document.body.appendChild(script);
+          addLog("SDK script injected");
         }
       } catch (err: any) {
-        console.error("[Scanner] Session init failed", err);
-        setError("Failed to start scanner session");
+        addLog("ERROR: " + err.message);
+        setError(err.message);
       }
     };
 
-    loadSessionAndSDK();
+    load();
 
     return () => {
       window.removeEventListener('onPrismLoaded', (() => {}) as EventListener);
@@ -88,55 +88,38 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   }, [onComplete, onClose]);
 
   const handleStartScan = () => {
+    addLog("Start Scan button clicked");
     setIsScanning(true);
   };
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
 
-      <div 
-        id="prism-container"
-        ref={containerRef}
-        style={{ 
-          position: 'absolute', 
-          top: 0, 
-          left: 0, 
-          width: '100%', 
-          height: '100%',
-          backgroundColor: 'transparent', 
-          touchAction: 'none'
-        }}
-        className="absolute inset-0 w-full h-full z-0"
-      />
+      {/* Prism container */}
+      <div id="prism-container" ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'transparent' }} />
 
+      {/* Debug panel - visible on iPhone */}
+      <div className="absolute top-4 left-4 right-4 bg-black/80 text-xs font-mono p-3 rounded-2xl z-[200] max-h-40 overflow-auto border border-emerald-500/30">
+        <div className="text-emerald-400 mb-1 font-bold">DEBUG LOG</div>
+        {debugLog.map((line, i) => (
+          <div key={i} className="text-emerald-100 py-0.5">{line}</div>
+        ))}
+      </div>
+
+      {/* Normal overlay */}
       {!isScanning && !error && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl animate-in fade-in duration-300">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
           <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
             <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
               <Camera className="w-10 h-10 text-emerald-400" />
             </div>
+            <h2 className="text-2xl font-bold mb-3">Scanner Ready</h2>
 
-            <h2 className="text-2xl font-bold mb-3 tracking-tight">Scanner Ready</h2>
-
-            <div className="flex flex-col gap-2 text-sm text-zinc-400 mb-8 w-full">
-              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
-                <span>Secure Tunnel</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              </div>
-              <div className="flex items-center justify-between px-4 py-2 bg-black/20 rounded-lg w-full">
-                <span>3D Engine</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              </div>
-            </div>
-
-            <button 
-              className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer"
-              onClick={handleStartScan}
-            >
+            <button className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white" onClick={handleStartScan}>
               Start Scan
             </button>
 
-            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300 transition-colors">
+            <button onClick={onClose} className="mt-6 text-zinc-500 text-sm hover:text-zinc-300">
               Cancel
             </button>
           </div>
