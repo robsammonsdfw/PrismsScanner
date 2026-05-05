@@ -25,31 +25,24 @@ export const ScanHistory: React.FC = () => {
     loadScans();
   }, []);
 
-  // Auto-refresh processing scans every 15 seconds
+  // Auto-refresh if any scan is still processing
   useEffect(() => {
     const interval = setInterval(() => {
-      const hasProcessing = scans.some(s => 
-        s.scan_data?.status === "PROCESSING" || 
-        s.scan_data?.status === "CREATED"
-      );
+      const hasProcessing = scans.some(scan => {
+        const status = scan.scan_data?.status || scan.status;
+        return status === 'PROCESSING' || status === 'CREATED';
+      });
       if (hasProcessing) loadScans();
     }, 15000);
-
     return () => clearInterval(interval);
   }, [scans]);
 
   const getStatusBadge = (status: string) => {
-    const lower = (status || '').toUpperCase();
-    if (lower === 'READY') {
-      return <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">✅ Completed</span>;
-    }
-    if (lower === 'PROCESSING' || lower === 'CREATED') {
-      return <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">⏳ Processing</span>;
-    }
-    if (lower === 'FAILED') {
-      return <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">❌ Failed</span>;
-    }
-    return <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">📌 {status}</span>;
+    const s = (status || '').toUpperCase();
+    if (s === 'READY') return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700">✅ Completed</span>;
+    if (s === 'PROCESSING' || s === 'CREATED') return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">⏳ Processing</span>;
+    if (s === 'FAILED') return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">❌ Failed</span>;
+    return <span className="px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-600">📌 {status}</span>;
   };
 
   if (selectedScan) {
@@ -63,7 +56,7 @@ export const ScanHistory: React.FC = () => {
           <h1 className="text-3xl font-bold text-slate-900">Your Scans</h1>
           <button
             onClick={() => { setRefreshing(true); loadScans(); }}
-            className="flex items-center gap-2 text-sm text-slate-500 hover:text-emerald-600 transition-colors"
+            className="flex items-center gap-2 text-sm text-slate-500 hover:text-emerald-600"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
@@ -92,17 +85,12 @@ export const ScanHistory: React.FC = () => {
                   className="bg-white border border-slate-200 rounded-3xl p-6 flex items-center justify-between cursor-pointer hover:border-emerald-300 hover:shadow transition-all group"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-2xl">
-                      📸
-                    </div>
+                    <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-2xl">📸</div>
                     <div>
                       <p className="font-semibold text-slate-900">Body Scan</p>
                       <p className="text-sm text-slate-500">
-                        {date.toLocaleDateString('en-US', { 
-                          month: 'short', 
-                          day: 'numeric', 
-                          year: 'numeric' 
-                        })} at {date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                        {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} 
+                        at {date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                       </p>
                     </div>
                   </div>
