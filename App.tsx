@@ -178,8 +178,8 @@ const App: React.FC = () => {
     );
   }
 
-   // 7. LANDING VIEW (Main Entry)
-   return (
+  // 7. LANDING VIEW (Main Entry)
+  return (
     <div className="min-h-[100dvh] bg-slate-50 text-slate-800 flex flex-col font-sans">
       <Navbar />
 
@@ -210,7 +210,7 @@ const App: React.FC = () => {
               <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
 
-            {/* NEW: View My Scans Button */}
+            {/* View My Scans Button */}
             <button 
               onClick={() => setAppState(AppState.SCAN_HISTORY)}
               className="w-full group relative bg-white border border-slate-200 hover:border-slate-300 text-slate-800 font-bold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-sm"
@@ -248,5 +248,6 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+};
 
 export default App;
