@@ -38,6 +38,27 @@ const agent = new https.Agent({
     timeout: 30000, 
     maxSockets: 100
 });
+const prismRequest = async (method, path, body = null) => {
+    const baseUrl = 'https://api.hosted.prismlabs.tech';
+    const url = `${baseUrl}${path}`;
+  
+    const options = {
+      method: method,
+      headers: {
+        'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,  // add this env var in Lambda
+        'Content-Type': 'application/json',
+        'Accept': 'application/json;v=1'
+      }
+    };
+  
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+  
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`Prism API error: ${response.status}`);
+    return response.json();
+  };
 
 // --- HELPER: PRISM REQUESTS ---
 async function prismRequest(options, postData = null) {
@@ -379,6 +400,11 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
         const newScan = await saveBodyScan(userId, scanData);
         return { statusCode: 201, headers, body: JSON.stringify(newScan) };
     }
+    if (method === 'POST' && pathParts.length === 3 && pathParts[2] === 'refresh') {
+        const scanId = pathParts[1];
+        const updated = await refreshScanStatus(userId, scanId);
+        return { statusCode: 200, headers, body: JSON.stringify(updated) };
+      }
 
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
 }
@@ -491,3 +517,34 @@ function callShopifyStorefrontAPI(query, variables) {
         req.end();
     });
 }
+
+async function refreshScanStatus(userId, scanId) {
+    const client = await pool.connect();
+    try {
+      // Get the scan
+      const scanRes = await client.query('SELECT * FROM body_scans WHERE id = $1 AND user_id = $2', [scanId, userId]);
+      if (scanRes.rows.length === 0) return { error: 'Scan not found' };
+  
+      const scan = scanRes.rows[0];
+      const scanData = scan.scan_data;
+      const prismScanId = scanData.prismScanId || scanData.id;
+  
+      if (!prismScanId) return scan;
+  
+      // Call Prism API for latest status
+      const latest = await prismRequest('GET', `/scans/${prismScanId}`);
+  
+      // Update DB with latest data
+      const updatedData = { ...scanData, ...latest };
+      await client.query('UPDATE body_scans SET scan_data = $1 WHERE id = $2', [updatedData, scanId]);
+  
+      console.log(`[refreshScanStatus] Updated scan ${scanId} to status: ${latest.status}`);
+  
+      return { ...scan, scan_data: updatedData };
+    } catch (err) {
+      console.error('Error refreshing scan status', err);
+      return { error: 'Failed to refresh status from Prism' };
+    } finally {
+      client.release();
+    }
+  }
