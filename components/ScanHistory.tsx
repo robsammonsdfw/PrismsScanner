@@ -6,18 +6,22 @@ import { HealthReport } from './HealthReport';
 export const ScanHistory: React.FC = () => {
   const [scans, setScans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedScan, setSelectedScan] = useState<any>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [rawData, setRawData] = useState<any>(null);   // ← shows exactly what the API returns
 
   const loadScans = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const data = await getScanHistory();
-      setScans(data || []);
-    } catch (err) {
+      setRawData(data);           // save raw data for debugging
+      setScans(Array.isArray(data) ? data : []);
+    } catch (err: any) {
       console.error("Failed to load scan history", err);
+      setError(err.message || "Failed to load scans");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
@@ -25,14 +29,15 @@ export const ScanHistory: React.FC = () => {
     loadScans();
   }, []);
 
-  // Auto-refresh if any scan is still processing
+  // Auto-refresh if any scan is processing
   useEffect(() => {
     const interval = setInterval(() => {
-      const hasProcessing = scans.some(scan => {
-        const status = scan.scan_data?.status || scan.status;
+      if (scans.some(s => {
+        const status = s.scan_data?.status || s.status;
         return status === 'PROCESSING' || status === 'CREATED';
-      });
-      if (hasProcessing) loadScans();
+      })) {
+        loadScans();
+      }
     }, 15000);
     return () => clearInterval(interval);
   }, [scans]);
@@ -54,28 +59,37 @@ export const ScanHistory: React.FC = () => {
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-slate-900">Your Scans</h1>
-          <button
-            onClick={() => { setRefreshing(true); loadScans(); }}
-            className="flex items-center gap-2 text-sm text-slate-500 hover:text-emerald-600"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <button onClick={loadScans} className="flex items-center gap-2 text-sm text-slate-500 hover:text-emerald-600">
+            <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+        {loading && <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-emerald-500" /></div>}
+
+        {error && <div className="text-red-500 text-center py-8">{error}</div>}
+
+        {/* RAW DATA DEBUG - always visible when no scans */}
+        {!loading && scans.length === 0 && rawData && (
+          <div className="bg-white border border-red-200 rounded-3xl p-6 mb-8">
+            <h3 className="font-bold text-red-600 mb-3">Raw API Response (for debugging)</h3>
+            <pre className="text-xs bg-slate-900 text-slate-200 p-4 rounded-2xl overflow-auto max-h-96 font-mono">
+              {JSON.stringify(rawData, null, 2)}
+            </pre>
           </div>
-        ) : scans.length === 0 ? (
+        )}
+
+        {!loading && scans.length === 0 && !rawData && (
           <div className="text-center py-12 text-slate-500">
             No scans yet.<br />Your first scan will appear here.
           </div>
-        ) : (
+        )}
+
+        {scans.length > 0 && (
           <div className="space-y-3">
             {scans.map((scan) => {
               const scanData = scan.scan_data || scan;
-              const date = new Date(scan.created_at || scan.createdAt || scanData.createdAt);
+              const date = new Date(scan.created_at || scan.createdAt || scanData.createdAt || Date.now());
               const status = scanData.status || 'CREATED';
 
               return (
@@ -94,7 +108,6 @@ export const ScanHistory: React.FC = () => {
                       </p>
                     </div>
                   </div>
-
                   <div className="flex items-center gap-4">
                     {getStatusBadge(status)}
                     <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
