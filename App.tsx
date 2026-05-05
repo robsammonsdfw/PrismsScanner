@@ -201,10 +201,28 @@ const App: React.FC = () => {
           </p>
 
           <div className="space-y-4 w-full">
-            <button 
-              onClick={startOnboarding}
-              className="w-full group relative bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transform hover:-translate-y-0.5"
-            >
+  {/* Start Scan Button */}
+  <button 
+    onClick={startOnboarding}
+    className="w-full group relative bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transform hover:-translate-y-0.5"
+  >
+    Start 3D Scan
+    <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+  </button>
+
+  {/* NEW: View My Scans Button */}
+  <button 
+    onClick={() => setAppState(AppState.SCAN_HISTORY)}
+    className="w-full group relative bg-white border border-slate-200 hover:border-slate-300 text-slate-800 font-bold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-sm"
+  >
+    📋 View My Scans
+  </button>
+
+  <div className="flex items-center justify-center gap-2 text-xs text-slate-500 mt-4">
+    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+    <span>Your data is encrypted & secure</span>
+  </div>
+</div>
               Start 3D Scan
               <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
