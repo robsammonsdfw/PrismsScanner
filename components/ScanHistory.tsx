@@ -113,7 +113,7 @@ export const ScanHistory: React.FC = () => {
                       <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        refreshScanStatusNow(scan.id);
+                        refreshScanStatus(scan.id);
                       }}
                       className="text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded-full hover:bg-amber-200"
                     >
