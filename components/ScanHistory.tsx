@@ -27,18 +27,16 @@ export const ScanHistory: React.FC = () => {
   const refreshScanStatus = async (scanId: string) => {
     try {
       const backendUrl = import.meta.env.VITE_BACKEND_API_URL;
-      if (!backendUrl) {
-        console.error("VITE_BACKEND_API_URL is not set!");
-        return;
-      }
-
       const url = `${backendUrl}/body-scans/refresh/${scanId}?_t=${Date.now()}`;
 
-      console.log("🔄 Calling backend refresh:", url);
+      console.log("🔄 Calling refresh:", url);
 
       const response = await fetch(url, { 
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('embracehealth-api-token')}`   // ← This was missing
+        }
       });
 
       console.log("Refresh response status:", response.status);
