@@ -24,10 +24,23 @@ export const ScanHistory: React.FC = () => {
     loadScans();
   }, []);
 
-  const refreshScanStatus = async (scanId: string) => {
+  const refreshScanStatusNow = async (scanId: string) => {
     try {
-      const response = await fetch(`/body-scans/${scanId}/refresh`, { method: 'POST' });
-      if (response.ok) loadScans();
+      const url = `/body-scans/refresh/${scanId}?_t=${Date.now()}`;
+      console.log("🔄 Calling refresh:", url);
+
+      const response = await fetch(url, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      console.log("Refresh status:", response.status);
+
+      if (response.ok) {
+        loadScans();
+      } else {
+        console.error("Refresh failed with status", response.status);
+      }
     } catch (err) {
       console.error("Failed to refresh status", err);
     }
@@ -91,14 +104,14 @@ export const ScanHistory: React.FC = () => {
                     {getStatusBadge(status)}
                     {(status === 'PROCESSING' || status === 'CREATED') && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          refreshScanStatus(scan.id);
-                        }}
-                        className="text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded-full hover:bg-amber-200"
-                      >
-                        Refresh
-                      </button>
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        refreshScanStatusNow(scan.id);
+                      }}
+                      className="text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded-full hover:bg-amber-200"
+                    >
+                      Refresh
+                    </button>
                     )}
                     <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
                   </div>

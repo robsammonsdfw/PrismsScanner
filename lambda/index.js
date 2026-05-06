@@ -38,27 +38,6 @@ const agent = new https.Agent({
     timeout: 30000, 
     maxSockets: 100
 });
-const prismRequest = async (method, path, body = null) => {
-    const baseUrl = 'https://api.hosted.prismlabs.tech';
-    const url = `${baseUrl}${path}`;
-  
-    const options = {
-      method: method,
-      headers: {
-        'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,  // add this env var in Lambda
-        'Content-Type': 'application/json',
-        'Accept': 'application/json;v=1'
-      }
-    };
-  
-    if (body) {
-      options.body = JSON.stringify(body);
-    }
-  
-    const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`Prism API error: ${response.status}`);
-    return response.json();
-  };
 
 // --- HELPER: PRISM REQUESTS ---
 async function prismRequest(options, postData = null) {
@@ -386,25 +365,33 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
 
 async function handleBodyScansRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
+    const fullPath = event.requestContext?.http?.path || event.path || '';
 
+    console.log(`[BodyScans] Method=${method}, FullPath=${fullPath}, pathParts=`, pathParts);
+
+    // GET /body-scans → list scans
     if (method === 'GET') {
         const scans = await getBodyScans(userId);
         return { statusCode: 200, headers, body: JSON.stringify(scans) };
     }
 
+    // REFRESH: POST /body-scans/refresh/{scanId}
+    if (method === 'POST' && pathParts.includes('refresh')) {
+        const scanId = pathParts[pathParts.length - 1];
+        console.log(`[Refresh] Handling refresh for scanId: ${scanId}`);
+        const updated = await refreshScanStatus(userId, scanId);
+        return { statusCode: 200, headers, body: JSON.stringify(updated) };
+    }
+
+    // POST /body-scans → save new scan
     if (method === 'POST') {
-        const scanData = JSON.parse(event.body);
+        const scanData = JSON.parse(event.body || '{}');
         if (!scanData) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scan data.' }) };
         }
         const newScan = await saveBodyScan(userId, scanData);
         return { statusCode: 201, headers, body: JSON.stringify(newScan) };
     }
-    if (method === 'POST' && pathParts.length === 3 && pathParts[2] === 'refresh') {
-        const scanId = pathParts[1];
-        const updated = await refreshScanStatus(userId, scanId);
-        return { statusCode: 200, headers, body: JSON.stringify(updated) };
-      }
 
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
 }
@@ -521,7 +508,6 @@ function callShopifyStorefrontAPI(query, variables) {
 async function refreshScanStatus(userId, scanId) {
     const client = await pool.connect();
     try {
-      // Get the scan
       const scanRes = await client.query('SELECT * FROM body_scans WHERE id = $1 AND user_id = $2', [scanId, userId]);
       if (scanRes.rows.length === 0) return { error: 'Scan not found' };
   
@@ -531,10 +517,24 @@ async function refreshScanStatus(userId, scanId) {
   
       if (!prismScanId) return scan;
   
-      // Call Prism API for latest status
-      const latest = await prismRequest('GET', `/scans/${prismScanId}`);
+      // Use your existing prismRequest function
+      const latestResponse = await prismRequest({
+        hostname: 'api.hosted.prismlabs.tech',
+        path: `/scans/${prismScanId}`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
+          'Accept': 'application/json;v=1'
+        }
+      });
   
-      // Update DB with latest data
+      if (!latestResponse.ok) {
+        console.error("Prism status check failed", latestResponse);
+        return scan;
+      }
+  
+      const latest = latestResponse.data;
+  
       const updatedData = { ...scanData, ...latest };
       await client.query('UPDATE body_scans SET scan_data = $1 WHERE id = $2', [updatedData, scanId]);
   
@@ -543,7 +543,7 @@ async function refreshScanStatus(userId, scanId) {
       return { ...scan, scan_data: updatedData };
     } catch (err) {
       console.error('Error refreshing scan status', err);
-      return { error: 'Failed to refresh status from Prism' };
+      return { error: 'Failed to refresh from Prism' };
     } finally {
       client.release();
     }

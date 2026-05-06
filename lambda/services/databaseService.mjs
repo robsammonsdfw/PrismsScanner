@@ -805,31 +805,21 @@ export const saveBodyScan = async (userId, scanData) => {
 export const getBodyScans = async (userId) => {
     const client = await pool.connect();
     try {
-      await ensureDatabaseSchema(client);
-  
-      console.log(`[getBodyScans] Current logged-in userId from JWT = ${userId}`);
-  
-      // Return ALL scans (no WHERE clause) so we can see your 4 scans
-      const query = `
-        SELECT id, user_id, scan_data, created_at
-        FROM body_scans
-        ORDER BY created_at DESC;
-      `;
-  
-      const res = await client.query(query);
-  
-      console.log(`[getBodyScans] Total rows in table = ${res.rows.length}`);
-  
-      // Log each scan's user_id so we can see the mismatch
-      res.rows.forEach((row, i) => {
-        console.log(`[getBodyScans] Scan #${i+1} - id=${row.id} user_id=${row.user_id}`);
-      });
-  
-      return res.rows;
+        // Ensure table exists on first run
+        await ensureDatabaseSchema(client);
+
+        const query = `
+            SELECT id, scan_data, created_at
+            FROM body_scans
+            WHERE user_id = $1
+            ORDER BY created_at DESC;
+        `;
+        const res = await client.query(query, [userId]);
+        return res.rows;
     } catch (err) {
-      console.error('Database error in getBodyScans:', err);
-      throw new Error('Could not retrieve body scans.');
+        console.error('Database error in getBodyScans:', err);
+        throw new Error('Could not retrieve body scans.');
     } finally {
-      client.release();
+        client.release();
     }
-  };
+};
