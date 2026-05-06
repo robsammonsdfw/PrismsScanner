@@ -362,7 +362,6 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
         return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Labs Unreachable", message: e.message }) };
     }
 }
-
 async function handleBodyScansRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
     const fullPath = event.requestContext?.http?.path || event.path || '';
@@ -370,13 +369,13 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     console.log(`[BodyScans] Method=${method}, FullPath=${fullPath}, pathParts=`, pathParts);
 
     // GET /body-scans → list scans
-    if (method === 'GET') {
+    if (method === 'GET' && fullPath === '/body-scans') {
         const scans = await getBodyScans(userId);
         return { statusCode: 200, headers, body: JSON.stringify(scans) };
     }
 
-    // REFRESH: POST /body-scans/refresh/{scanId}
-    if (method === 'POST' && pathParts.includes('refresh')) {
+    // REFRESH: /body-scans/refresh/{scanId}  (matches what frontend is calling)
+    if (fullPath.includes('/refresh/')) {
         const scanId = pathParts[pathParts.length - 1];
         console.log(`[Refresh] Handling refresh for scanId: ${scanId}`);
         const updated = await refreshScanStatus(userId, scanId);
@@ -384,7 +383,7 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     }
 
     // POST /body-scans → save new scan
-    if (method === 'POST') {
+    if (method === 'POST' && fullPath === '/body-scans') {
         const scanData = JSON.parse(event.body || '{}');
         if (!scanData) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scan data.' }) };

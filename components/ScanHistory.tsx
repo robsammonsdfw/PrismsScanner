@@ -24,17 +24,24 @@ export const ScanHistory: React.FC = () => {
     loadScans();
   }, []);
 
-  const refreshScanStatusNow = async (scanId: string) => {
+  const refreshScanStatus = async (scanId: string) => {
     try {
-      const url = `/body-scans/refresh/${scanId}?_t=${Date.now()}`;
-      console.log("🔄 Calling refresh:", url);
+      const backendUrl = import.meta.env.VITE_BACKEND_API_URL;
+      if (!backendUrl) {
+        console.error("VITE_BACKEND_API_URL is not set!");
+        return;
+      }
+
+      const url = `${backendUrl}/body-scans/refresh/${scanId}?_t=${Date.now()}`;
+
+      console.log("🔄 Calling backend refresh:", url);
 
       const response = await fetch(url, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
 
-      console.log("Refresh status:", response.status);
+      console.log("Refresh response status:", response.status);
 
       if (response.ok) {
         loadScans();
