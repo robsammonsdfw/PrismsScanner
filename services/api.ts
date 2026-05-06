@@ -117,3 +117,35 @@ export const checkAuthToken = (): boolean => {
 export const setAuthToken = (token: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, token);
 };
+
+export const getUploadUrl = async (scanId: string) => {
+    const endpoint = getCleanUrl(SCANNER_API_URL, `body-scans/${scanId}/upload-url`);
+  
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: getHeaders()
+    });
+  
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to get upload URL');
+    }
+    return response.json(); // { url, expirationTime }
+  };
+  
+  export const uploadWebmToPrism = async (uploadUrl: string, webmBlob: Blob) => {
+    console.log(`[Upload] Putting .webm to signed URL, size: ${webmBlob.size} bytes`);
+  
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: webmBlob,
+      headers: {
+        'Content-Type': 'video/webm'
+      }
+    });
+  
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+    return true;
+  };

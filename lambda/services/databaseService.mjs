@@ -823,3 +823,66 @@ export const getBodyScans = async (userId) => {
         client.release();
     }
 };
+
+export const refreshScanStatus = async (userId, scanId) => {
+    const client = await pool.connect();
+    try {
+      console.log(`[refreshScanStatus] Starting refresh for scan ${scanId}`);
+  
+      const scanRes = await client.query('SELECT * FROM body_scans WHERE id = $1 AND user_id = $2', [scanId, userId]);
+      if (scanRes.rows.length === 0) return { error: 'Scan not found' };
+  
+      const scan = scanRes.rows[0];
+      const scanData = scan.scan_data;
+      const prismScanId = scanData.prismScanId || scanData.id;
+  
+      if (!prismScanId) return scan;
+  
+      // Get latest scan status
+      const latestScan = await prismRequest({
+        hostname: 'api.hosted.prismlabs.tech',
+        path: `/scans/${prismScanId}`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
+          'Accept': 'application/json;v=1'
+        }
+      });
+  
+      if (latestScan.ok) {
+        const latest = latestScan.data;
+        const updatedData = { ...scanData, ...latest };
+  
+        // If scan is READY, also pull the full health report
+        if (latest.status === 'READY') {
+          console.log(`[refreshScanStatus] Scan is READY - pulling health report`);
+          const healthReport = await prismRequest({
+            hostname: 'api.hosted.prismlabs.tech',
+            path: `/scans/${prismScanId}/health-report`,
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
+              'Accept': 'application/json;v=1'
+            }
+          });
+  
+          if (healthReport.ok) {
+            updatedData.healthReport = healthReport.data;
+            console.log(`[refreshScanStatus] Health report pulled successfully`);
+          }
+        }
+  
+        await client.query('UPDATE body_scans SET scan_data = $1 WHERE id = $2', [updatedData, scanId]);
+        console.log(`[refreshScanStatus] ✅ Updated scan ${scanId} to status: ${latest.status}`);
+  
+        return { ...scan, scan_data: updatedData };
+      }
+  
+      return scan;
+    } catch (err) {
+      console.error('[refreshScanStatus] Error:', err);
+      return { error: 'Failed to refresh' };
+    } finally {
+      client.release();
+    }
+  };

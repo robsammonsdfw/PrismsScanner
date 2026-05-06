@@ -36,10 +36,36 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         addLog("2. Session received from backend ✅");
 
         const handlePrismLoaded = (event: CustomEvent) => {
-          addLog("3. Prism SDK loaded - calling minimal render()");
+          addLog("3. Prism SDK loaded - calling render()");
+        
           if (event.detail?.prism) {
             const prism = event.detail.prism;
-            prism.render({});   // ← minimal as developer instructed
+            
+            prism.render({
+              onSuccess: (result: any) => {
+                addLog("✅ PRISM ONSUCCESS FIRED");
+                
+                console.log("🔥 FULL Prism onSuccess payload:", result);
+        
+                // Log everything useful for us
+                addLog("Keys: " + Object.keys(result || {}).join(", "));
+                addLog("Has webm?: " + !!(result.webm || result.video || result.captureData));
+                addLog("scanId: " + (result.scanId || result.id || 'missing'));
+        
+                // Pass the full result to parent (for saving + upload)
+                onComplete(result);
+              },
+        
+              onFailure: (err: any) => {
+                addLog("❌ Prism Failure: " + (err?.message || JSON.stringify(err)));
+                setError("Scan failed: " + (err?.message || "Unknown error"));
+              },
+        
+              onClose: () => {
+                addLog("Prism window closed by user");
+                onClose();
+              }
+            });
           }
         };
 

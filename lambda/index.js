@@ -28,9 +28,11 @@ import {
     getSavedMealById,
     getMealLogEntryById,
     saveBodyScan,
-    getBodyScans
+    getBodyScans,
+    refreshScanStatus
 } from './services/databaseService.mjs';
 import { Buffer } from 'buffer';
+
 
 // --- SHARED AGENT FOR PERFORMANCE ---
 const agent = new https.Agent({
@@ -349,11 +351,12 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             headers,
             body: JSON.stringify({
                 scanId: scanRes.data.id || scanRes.data._id,
-                prismScanId: scanRes.data.prismScanId,
+                prismScanId: scanRes.data.prismScanId,   // ← Make sure this is saved
                 securityToken: finalToken,
                 apiBaseUrl: baseUrl,
                 assetConfigId: assetConfigId,
-                mode: isSandbox ? 'sandbox' : 'production'
+                mode: isSandbox ? 'sandbox' : 'production',
+                fullScanData: scanRes.data   // ← Extra safety
             })
         };
 
@@ -362,6 +365,22 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
         return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Labs Unreachable", message: e.message }) };
     }
 }
+
+async function getUploadUrl(scanId) {
+    const options = {
+        hostname: 'api.hosted.prismlabs.tech',
+        path: `/scans/${scanId}/upload-url`,
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
+            'Accept': 'application/json;v=1'
+        }
+    };
+    const res = await prismRequest(options);
+    if (res.ok) return res.data;
+    throw new Error(res.data?.error || 'Failed to get upload URL');
+}
+
 async function handleBodyScansRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
     const fullPath = event.requestContext?.http?.path || event.path || '';
@@ -369,31 +388,44 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
     console.log(`[BodyScans] Method=${method}, FullPath=${fullPath}, pathParts=`, pathParts);
 
     // GET /body-scans → list scans
-    if (method === 'GET' && fullPath === '/body-scans') {
+    if (method === 'GET') {
         const scans = await getBodyScans(userId);
         return { statusCode: 200, headers, body: JSON.stringify(scans) };
     }
 
-    // REFRESH: /body-scans/refresh/{scanId}  (matches what frontend is calling)
-    if (fullPath.includes('/refresh/')) {
+    // REFRESH: POST /body-scans/refresh/{scanId}
+    if (method === 'POST' && fullPath.includes('/refresh')) {
         const scanId = pathParts[pathParts.length - 1];
         console.log(`[Refresh] Handling refresh for scanId: ${scanId}`);
         const updated = await refreshScanStatus(userId, scanId);
         return { statusCode: 200, headers, body: JSON.stringify(updated) };
     }
+    // GET UPLOAD URL: POST /body-scans/{scanId}/upload-url
+    if (method === 'POST' && fullPath.includes('/upload-url')) {
+        const scanId = pathParts[1];
+        console.log(`[Upload] Getting signed URL for scanId: ${scanId}`);
+
+        const uploadInfo = await getUploadUrl(scanId);   // Add helper below
+        return { statusCode: 201, headers, body: JSON.stringify(uploadInfo) };
+    }
 
     // POST /body-scans → save new scan
-    if (method === 'POST' && fullPath === '/body-scans') {
-        const scanData = JSON.parse(event.body || '{}');
+      if (method === 'POST') {
+        let scanData = JSON.parse(event.body || '{}');
         if (!scanData) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scan data.' }) };
         }
-        const newScan = await saveBodyScan(userId, scanData);
+
+        // Ensure we save the FULL object with prismScanId
+        const fullScanData = {
+            ...scanData,
+            // If prismScanId is missing, try to pull it from other fields
+            prismScanId: scanData.prismScanId || scanData.id
+        };
+
+        const newScan = await saveBodyScan(userId, fullScanData);
         return { statusCode: 201, headers, body: JSON.stringify(newScan) };
     }
-
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
-}
 
 // ... (Other handlers like Grocery/Meals below are kept implicit but connected via routing logic above)
 
@@ -503,47 +535,3 @@ function callShopifyStorefrontAPI(query, variables) {
         req.end();
     });
 }
-
-async function refreshScanStatus(userId, scanId) {
-    const client = await pool.connect();
-    try {
-      const scanRes = await client.query('SELECT * FROM body_scans WHERE id = $1 AND user_id = $2', [scanId, userId]);
-      if (scanRes.rows.length === 0) return { error: 'Scan not found' };
-  
-      const scan = scanRes.rows[0];
-      const scanData = scan.scan_data;
-      const prismScanId = scanData.prismScanId || scanData.id;
-  
-      if (!prismScanId) return scan;
-  
-      // Use your existing prismRequest function
-      const latestResponse = await prismRequest({
-        hostname: 'api.hosted.prismlabs.tech',
-        path: `/scans/${prismScanId}`,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
-          'Accept': 'application/json;v=1'
-        }
-      });
-  
-      if (!latestResponse.ok) {
-        console.error("Prism status check failed", latestResponse);
-        return scan;
-      }
-  
-      const latest = latestResponse.data;
-  
-      const updatedData = { ...scanData, ...latest };
-      await client.query('UPDATE body_scans SET scan_data = $1 WHERE id = $2', [updatedData, scanId]);
-  
-      console.log(`[refreshScanStatus] Updated scan ${scanId} to status: ${latest.status}`);
-  
-      return { ...scan, scan_data: updatedData };
-    } catch (err) {
-      console.error('Error refreshing scan status', err);
-      return { error: 'Failed to refresh from Prism' };
-    } finally {
-      client.release();
-    }
-  }
