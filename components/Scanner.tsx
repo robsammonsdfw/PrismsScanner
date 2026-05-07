@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { initScanSession, getUploadUrl, uploadWebmToPrism } from '../services/api';
-import { Loader2, AlertTriangle, Camera, Upload, CheckCircle2 } from 'lucide-react';
+import { initScanSession, getUploadUrl } from '../services/api';
+import { Loader2, AlertTriangle, Upload, CheckCircle2 } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -14,12 +14,12 @@ declare global {
 }
 
 type UploadStage =
-  | 'idle'
-  | 'capturing'
-  | 'getting_url'
-  | 'uploading'
-  | 'saving'
-  | 'done'
+  | 'idle'         // session loading
+  | 'ready'        // session loaded, button visible, waiting for user
+  | 'capturing'    // user clicked, Prism UI is active
+  | 'getting_url'  // Prism onSuccess fired, fetching signed URL
+  | 'uploading'    // PUT to signed URL in progress
+  | 'saving'       // calling onComplete
   | 'error';
 
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
@@ -36,9 +36,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     setDebugLog(prev => [...prev, msg]);
   };
 
-  // ─── CORE: extract webm blob from whatever Prism returns ────────────────────
+  // ── Extract webm blob from whatever Prism returns ────────────────────────
   const extractWebmBlob = (result: any): Blob | null => {
-    // Prism web SDK may return the blob under several keys — check all of them
     const candidates = [
       result?.webm,
       result?.video,
@@ -47,10 +46,8 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
       result?.file,
       result?.data,
     ];
-
     for (const c of candidates) {
       if (c instanceof Blob) return c;
-      // Sometimes it's a base64 string
       if (typeof c === 'string' && c.startsWith('data:video')) {
         addLog('Found base64 video — converting to Blob');
         const [header, b64] = c.split(',');
@@ -64,7 +61,27 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     return null;
   };
 
-  // ─── CORE: full pipeline after Prism fires onSuccess ───────────────────────
+  // ── XHR upload with progress ─────────────────────────────────────────────
+  const uploadWithProgress = (url: string, blob: Blob, onProgress: (pct: number) => void): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', url, true);
+      xhr.setRequestHeader('Content-Type', blob.type || 'video/webm');
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) { onProgress(100); resolve(); }
+        else reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.ontimeout = () => reject(new Error('Upload timed out'));
+      xhr.timeout = 120_000;
+      xhr.send(blob);
+    });
+  };
+
+  // ── Full pipeline after Prism fires onSuccess ────────────────────────────
   const handlePrismSuccess = async (result: any, session: any) => {
     addLog('✅ onSuccess fired — keys: ' + Object.keys(result || {}).join(', '));
     console.log('🔥 Full Prism onSuccess payload:', result);
@@ -72,43 +89,33 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     const prismScanId = result?.scanId || result?.id || session?.scanId;
     addLog('prismScanId: ' + (prismScanId || 'MISSING'));
 
-    // ── Step 1: try to get webm blob ────────────────────────────────────────
     const webmBlob = extractWebmBlob(result);
 
     if (!webmBlob) {
-      // No video returned — Prism web SDK may handle upload internally.
-      // Log keys to help debug, then fall through to just save the record.
-      addLog('⚠️  No webm blob found in result — skipping upload step');
+      addLog('⚠️  No webm blob found — skipping upload, saving record as-is');
       addLog('Result keys: ' + JSON.stringify(Object.keys(result || {})));
-      addLog('Saving scan record without upload…');
       setUploadStage('saving');
       onComplete({ ...result, prismScanId, scanId: prismScanId });
       return;
     }
 
-    addLog(`webm blob found ✅ size=${webmBlob.size} bytes type=${webmBlob.type}`);
+    addLog(`webm blob found ✅ size=${webmBlob.size} type=${webmBlob.type}`);
 
     try {
-      // ── Step 2: get signed upload URL from your backend ──────────────────
       setUploadStage('getting_url');
       addLog('Fetching signed upload URL…');
       const { url: uploadUrl } = await getUploadUrl(prismScanId);
       addLog('Upload URL received ✅');
 
-      // ── Step 3: PUT webm to Prism storage ────────────────────────────────
       setUploadStage('uploading');
       addLog('Uploading webm to Prism…');
-
-      // Use XHR so we can track progress
       await uploadWithProgress(uploadUrl, webmBlob, (pct) => {
         setUploadProgress(pct);
-        if (pct % 25 === 0) addLog(`Upload progress: ${pct}%`);
+        if (pct % 25 === 0) addLog(`Upload: ${pct}%`);
       });
 
       addLog('Upload complete ✅');
       setUploadStage('saving');
-
-      // ── Step 4: save record to your DB (backend will poll Prism for status) ─
       onComplete({ ...result, prismScanId, scanId: prismScanId });
 
     } catch (err: any) {
@@ -118,40 +125,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     }
   };
 
-  // XHR-based upload with progress reporting
-  const uploadWithProgress = (url: string, blob: Blob, onProgress: (pct: number) => void): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', url, true);
-      xhr.setRequestHeader('Content-Type', blob.type || 'video/webm');
-
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          onProgress(Math.round((e.loaded / e.total) * 100));
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress(100);
-          resolve();
-        } else {
-          reject(new Error(`Upload failed with status ${xhr.status}`));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('Network error during upload'));
-      xhr.ontimeout = () => reject(new Error('Upload timed out'));
-      xhr.timeout = 120_000; // 2 min timeout for large video files
-
-      xhr.send(blob);
-    });
-  };
-
-  // ─── Mount: init session + inject Prism SDK ─────────────────────────────────
+  // ── Mount: init session + inject Prism SDK ───────────────────────────────
   useEffect(() => {
     addLog('1. Scanner mounted — fetching session');
-
     let handlePrismLoaded: ((e: CustomEvent) => void) | null = null;
 
     const load = async () => {
@@ -159,23 +135,18 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         const data = await initScanSession();
         setSessionData(data);
         addLog('2. Session received ✅  scanId=' + data.scanId);
+        setUploadStage('ready');
 
-        // Capture session in closure so the Prism callback can reference it
         const capturedSession = data;
 
         handlePrismLoaded = (event: CustomEvent) => {
           addLog('3. Prism SDK loaded — calling render()');
-
           const prism = event.detail?.prism;
-          if (!prism) {
-            addLog('❌ No prism object in event');
-            return;
-          }
-
-          setUploadStage('capturing');
+          if (!prism) { addLog('❌ No prism object in event'); return; }
 
           prism.render({
             onSuccess: (result: any) => {
+              setUploadStage('getting_url');
               handlePrismSuccess(result, capturedSession);
             },
             onFailure: (err: any) => {
@@ -218,82 +189,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
     };
   }, []);
 
-  // ─── Upload progress overlay ─────────────────────────────────────────────────
-  const uploadOverlay = uploadStage !== 'idle' && uploadStage !== 'capturing' && uploadStage !== 'error' && (
-    <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-xl">
-      <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto w-full gap-6">
-
-        {/* Animated icon */}
-        <div className="w-20 h-20 rounded-full bg-emerald-500/10 ring-1 ring-emerald-500/30 flex items-center justify-center">
-          {uploadStage === 'saving' ? (
-            <CheckCircle2 className="w-10 h-10 text-emerald-400" />
-          ) : uploadStage === 'uploading' ? (
-            <Upload className="w-10 h-10 text-emerald-400 animate-bounce" />
-          ) : (
-            <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
-          )}
-        </div>
-
-        {/* Status text */}
-        <div>
-          <h2 className="text-xl font-bold text-white mb-1">
-            {uploadStage === 'getting_url' && 'Preparing upload…'}
-            {uploadStage === 'uploading' && 'Uploading scan…'}
-            {uploadStage === 'saving' && 'Saving your results…'}
-          </h2>
-          <p className="text-slate-400 text-sm">
-            {uploadStage === 'uploading'
-              ? 'Sending your scan to Prism for processing'
-              : 'This will only take a moment'}
-          </p>
-        </div>
-
-        {/* Progress bar — only during upload */}
-        {uploadStage === 'uploading' && (
-          <div className="w-full">
-            <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
-            <p className="text-xs text-slate-500 mt-2 text-right">{uploadProgress}%</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  // ─── Error overlay ───────────────────────────────────────────────────────────
-  const errorOverlay = uploadStage === 'error' && error && (
-    <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/95">
-      <div className="text-center p-8 max-w-sm">
-        <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-        <p className="text-white font-semibold mb-2">Something went wrong</p>
-        <p className="text-slate-400 text-sm mb-6">{error}</p>
-        <button onClick={onClose} className="px-8 py-3 bg-white text-black rounded-xl font-bold">
-          Close
-        </button>
-      </div>
-    </div>
-  );
-
-  // ─── Initial ready overlay ───────────────────────────────────────────────────
-  const readyOverlay = uploadStage === 'idle' && !error && (
-    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
-      <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto">
-        <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 ring-1 ring-emerald-500/20">
-          <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2">Initializing Scanner</h2>
-        <p className="text-slate-400 text-sm mb-6">Setting up your scan session…</p>
-        <button onClick={onClose} className="text-zinc-500 text-sm hover:text-zinc-300">
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white flex items-center justify-center overflow-hidden">
 
@@ -305,17 +203,106 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         style={{ backgroundColor: 'transparent' }}
       />
 
-      {/* Debug log — remove or hide in production */}
-      <div className="absolute top-4 left-4 right-4 bg-black/90 text-xs font-mono p-3 rounded-2xl z-[300] max-h-40 overflow-auto border border-emerald-400">
+      {/* Debug log — remove in production */}
+      <div className="absolute top-4 left-4 right-4 bg-black/90 text-xs font-mono p-3 rounded-2xl z-[300] max-h-40 overflow-auto border border-emerald-400 pointer-events-none">
         <div className="text-emerald-400 mb-1 font-bold">DEBUG LOG</div>
         {debugLog.map((line, i) => (
           <div key={i} className="text-emerald-100 py-px text-[10px]">{line}</div>
         ))}
       </div>
 
-      {readyOverlay}
-      {uploadOverlay}
-      {errorOverlay}
+      {/* ── LOADING: session not ready yet ── */}
+      {uploadStage === 'idle' && !error && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
+          <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto gap-4">
+            <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
+            <h2 className="text-2xl font-bold">Initializing Scanner</h2>
+            <p className="text-slate-400 text-sm">Setting up your scan session…</p>
+            <button onClick={onClose} className="text-zinc-500 text-sm hover:text-zinc-300 mt-2">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── READY: session loaded — THE prism-button MUST exist in the DOM ──
+           The Prism SDK scans for elements with class "prism-button" after
+           render() is called and attaches its own click handler to them.
+           Do NOT add an onClick here — the SDK owns this button's behavior. ── */}
+      {uploadStage === 'ready' && !error && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl">
+          <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto gap-6">
+            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center ring-1 ring-emerald-500/20">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+                <circle cx="12" cy="13" r="3"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold mb-1">Scanner Ready</h2>
+              <p className="text-slate-400 text-sm">Position yourself 6–8 feet from the camera in a well-lit room.</p>
+            </div>
+
+            {/* prism-button: SDK attaches click handler to this element */}
+            <button className="prism-button w-full py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white transition-all">
+              Start Scan
+            </button>
+
+            <button onClick={onClose} className="text-zinc-500 text-sm hover:text-zinc-300">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── UPLOAD IN PROGRESS ── */}
+      {(uploadStage === 'getting_url' || uploadStage === 'uploading' || uploadStage === 'saving') && (
+        <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-xl">
+          <div className="flex flex-col items-center p-8 text-center max-w-sm mx-auto w-full gap-6">
+            <div className="w-20 h-20 rounded-full bg-emerald-500/10 ring-1 ring-emerald-500/30 flex items-center justify-center">
+              {uploadStage === 'saving'
+                ? <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                : uploadStage === 'uploading'
+                ? <Upload className="w-10 h-10 text-emerald-400 animate-bounce" />
+                : <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
+              }
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white mb-1">
+                {uploadStage === 'getting_url' && 'Preparing upload…'}
+                {uploadStage === 'uploading' && 'Uploading scan…'}
+                {uploadStage === 'saving' && 'Saving your results…'}
+              </h2>
+              <p className="text-slate-400 text-sm">
+                {uploadStage === 'uploading'
+                  ? 'Sending your scan video to Prism for processing'
+                  : 'This will only take a moment'}
+              </p>
+            </div>
+            {uploadStage === 'uploading' && (
+              <div className="w-full">
+                <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-2 text-right">{uploadProgress}%</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ERROR ── */}
+      {uploadStage === 'error' && error && (
+        <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/95">
+          <div className="text-center p-8 max-w-sm">
+            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <p className="text-white font-semibold mb-2">Something went wrong</p>
+            <p className="text-slate-400 text-sm mb-6">{error}</p>
+            <button onClick={onClose} className="px-8 py-3 bg-white text-black rounded-xl font-bold">Close</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
