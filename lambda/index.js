@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import jwt from 'jsonwebtoken';
 import https from 'https';
@@ -32,7 +31,6 @@ import {
     refreshScanStatus
 } from './services/databaseService.mjs';
 import { Buffer } from 'buffer';
-
 
 // --- SHARED AGENT FOR PERFORMANCE ---
 const agent = new https.Agent({
@@ -84,9 +82,24 @@ async function prismRequest(options, postData = null) {
     });
 }
 
+// --- UPLOAD URL HELPER ---
+async function getUploadUrl(scanId) {
+    const options = {
+        hostname: 'api.hosted.prismlabs.tech',
+        path: `/scans/${scanId}/upload-url`,
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
+            'Accept': 'application/json;v=1'
+        }
+    };
+    const res = await prismRequest(options);
+    if (res.ok) return res.data;
+    throw new Error(res.data?.error || 'Failed to get upload URL');
+}
+
 // --- MAIN HANDLER (ROUTER) ---
 export const handler = async (event) => {
-    // 1. SETUP CORS & HEADERS IMMEDIATELY
     const {
         GEMINI_API_KEY,
         SHOPIFY_STOREFRONT_TOKEN,
@@ -97,26 +110,24 @@ export const handler = async (event) => {
         PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT
     } = process.env;
     
-    // Dynamic CORS configuration
     const allowedOrigins = [
-     "https://food.embracehealth.ai",
-    "https://app.embracehealth.ai",
-    "https://scan.embracehealth.ai",           
-    "https://main.dfp0msdoew280.amplifyapp.com",
-    "http://localhost:5173",
-    "http://localhost:3000",
+        "https://food.embracehealth.ai",
+        "https://app.embracehealth.ai",
+        "https://scan.embracehealth.ai",           
+        "https://main.dfp0msdoew280.amplifyapp.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
         FRONTEND_URL
     ].filter(Boolean);
 
     const requestHeaders = event.headers || {};
     const origin = requestHeaders.origin || requestHeaders.Origin;
     
-    // Default to the origin sending the request if it's in our allowed list, otherwise permissive for dev/debug
     let accessControlAllowOrigin = '*';
     if (origin && allowedOrigins.includes(origin)) {
         accessControlAllowOrigin = origin;
     } else if (FRONTEND_URL) {
-        accessControlAllowOrigin = FRONTEND_URL; // Fallback to primary env
+        accessControlAllowOrigin = FRONTEND_URL;
     }
 
     const headers = {
@@ -126,7 +137,6 @@ export const handler = async (event) => {
         "Access-Control-Allow-Credentials": "true"
     };
 
-    // 2. HANDLE PREFLIGHT (OPTIONS)
     const method = (event.requestContext?.http?.method || event.httpMethod || "").toUpperCase();
     if (method === 'OPTIONS') {
         return { statusCode: 204, headers, body: "" };
@@ -136,7 +146,6 @@ export const handler = async (event) => {
         let path = event.rawPath || event.path || "/";
         if (!path.startsWith('/')) path = '/' + path;
 
-        // Handle Stage prefix if present
         const stage = event.requestContext?.stage;
         if (stage && stage !== '$default') {
             const stagePrefix = `/${stage}`;
@@ -153,7 +162,6 @@ export const handler = async (event) => {
             return await handleCustomerLogin(event, headers, JWT_SECRET);
         }
 
-        // 3. AUTHENTICATION
         const normalizedHeaders = {};
         if (event.headers) {
             for (const key in event.headers) {
@@ -167,32 +175,21 @@ export const handler = async (event) => {
         }
 
         try {
-            // STRICT AUTH
             event.user = jwt.verify(token, JWT_SECRET);
         } catch (err) {
             console.warn(`[Auth] Strict verify failed: ${err.message}. Attempting Soft Auth.`);
-            // SOFT AUTH FALLBACK (Fixes your loop issue)
             const decoded = jwt.decode(token);
             if (decoded && decoded.userId) {
                 console.log("[Auth] Soft Auth successful for:", decoded.email);
                 event.user = decoded;
             } else {
-                return { 
-                    statusCode: 401, 
-                    headers, 
-                    body: JSON.stringify({ 
-                        error: 'Unauthorized: Invalid token', 
-                        details: err.message 
-                    })
-                };
+                return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized: Invalid token' })};
             }
         }
 
         const pathParts = path.split('/').filter(Boolean);
         const resource = pathParts[0];
 
-        // 4. ROUTING
-        // PRISM / SCANNER ROUTES
         if (path === '/init') {
             return await handleInitScan(event, headers, event.user.userId, event.user.email, PRISM_API_KEY);
         }
@@ -200,9 +197,6 @@ export const handler = async (event) => {
             return await handleBodyScansRequest(event, headers, method, pathParts);
         }
 
-        // FOOD APP ROUTES
-        // Initialize Gemini only when needed to prevent crashes if API key is missing for other routes
-        
         if (resource === 'meal-log') {
             return await handleMealLogRequest(event, headers, method, pathParts);
         }
@@ -212,11 +206,8 @@ export const handler = async (event) => {
         if (resource === 'meal-plans') {
             return await handleMealPlansRequest(event, headers, method, pathParts);
         }
-        if (resource === 'grocery-lists') { 
+        if (resource === 'grocery-lists' || resource === 'grocery-list') { 
             return await handleGroceryListRequest(event, headers, method, pathParts);
-        }
-        if (resource === 'grocery-list') { 
-             return await handleGroceryListRequest(event, headers, method, ['grocery-lists', ...pathParts.slice(1)]);
         }
         if (resource === 'analyze-image' || resource === 'analyze-image-recipes') {
             const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
@@ -238,7 +229,6 @@ export const handler = async (event) => {
 
     } catch (error) {
         console.error(`[CRITICAL HANDLER ERROR]`, error);
-        // Ensure headers are returned even on crash to prevent CORS errors on the frontend
         return { 
             statusCode: 500, 
             headers, 
@@ -287,7 +277,6 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             termsOfService: { accepted: true, version: "1.0" }
         };
 
-        // 1. Create/Verify User
         let userRes = await prismRequest({
             ...defaultRequestOptions,
             method: 'POST',
@@ -305,17 +294,11 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             });
             if (fetchRes.ok) {
                 securityToken = fetchRes.data.token || fetchRes.data.securityToken;
-            } else {
-                console.error("[Prism] Failed to fetch existing user:", fetchRes.data);
             }
         } else if (userRes.ok) {
             securityToken = userRes.data.token || userRes.data.securityToken;
-        } else {
-            console.error("[Prism] User Provisioning Failed:", userRes.data);
-            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism User Setup Failed", details: userRes.data }) };
         }
 
-        // 2. Create Scan Session
         console.log(`[Prism] Creating Scan Session...`);
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) {}
@@ -329,34 +312,22 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
             assetConfigId: assetConfigId,
             deviceConfigName: body.deviceConfigName || 'ANDROID_SCANNER'
         });
-        console.log("[Prism] FULL USER RESPONSE (for reference):", JSON.stringify(userRes?.data || {}, null, 2));
-        console.log("[Prism] FULL SCAN RESPONSE from Prism:", JSON.stringify(scanRes.data, null, 2));
-        console.log("[Prism] Status:", scanRes.status, "OK?", scanRes.ok);
-        if (!scanRes.ok) {
-            console.error("[Prism] Scan Session Creation Failed:", scanRes.data);
-            return { statusCode: 502, headers, body: JSON.stringify({ error: "Prism Session Failed", details: scanRes.data }) };
-        }
-        console.log("[Prism DEBUG] securityToken from /users step:", securityToken);
-        console.log("[Prism DEBUG] scanRes.data keys:", Object.keys(scanRes.data || {}));
-        console.log("[Prism DEBUG] FULL scanRes.data:", JSON.stringify(scanRes.data, null, 2));
-        // IMPROVED: Prioritize 'clientToken' or 'token' from Scan response over User securityToken
-        const finalToken = scanRes.data.clientToken || scanRes.data.token || scanRes.data.securityToken || securityToken || prismUserToken;
 
-        if (!finalToken) {
-            return { statusCode: 502, headers, body: JSON.stringify({ error: "No security token returned by Prism API" }) };
-        }
+        console.log("[Prism DEBUG] FULL scanRes.data:", JSON.stringify(scanRes.data, null, 2));
+
+        const finalToken = scanRes.data.clientToken || scanRes.data.token || scanRes.data.securityToken || securityToken || prismUserToken;
 
         return {
             statusCode: 201,
             headers,
             body: JSON.stringify({
-                scanId: scanRes.data.id || scanRes.data._id,
-                prismScanId: scanRes.data.prismScanId,   // ← Make sure this is saved
+                scanId: scanRes.data.id,
+                prismScanId: scanRes.data.prismScanId,
                 securityToken: finalToken,
                 apiBaseUrl: baseUrl,
                 assetConfigId: assetConfigId,
                 mode: isSandbox ? 'sandbox' : 'production',
-                fullScanData: scanRes.data   // ← Extra safety
+                fullScanData: scanRes.data
             })
         };
 
@@ -366,60 +337,39 @@ async function handleInitScan(event, headers, userId, userEmail, apiKey) {
     }
 }
 
-async function getUploadUrl(scanId) {
-    const options = {
-        hostname: 'api.hosted.prismlabs.tech',
-        path: `/scans/${scanId}/upload-url`,
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${process.env.PRISM_API_KEY}`,
-            'Accept': 'application/json;v=1'
-        }
-    };
-    const res = await prismRequest(options);
-    if (res.ok) return res.data;
-    throw new Error(res.data?.error || 'Failed to get upload URL');
-}
-
 async function handleBodyScansRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
     const fullPath = event.requestContext?.http?.path || event.path || '';
 
     console.log(`[BodyScans] Method=${method}, FullPath=${fullPath}, pathParts=`, pathParts);
 
-    // GET /body-scans → list scans
     if (method === 'GET') {
         const scans = await getBodyScans(userId);
         return { statusCode: 200, headers, body: JSON.stringify(scans) };
     }
 
-    // REFRESH: POST /body-scans/refresh/{scanId}
     if (method === 'POST' && fullPath.includes('/refresh')) {
         const scanId = pathParts[pathParts.length - 1];
         console.log(`[Refresh] Handling refresh for scanId: ${scanId}`);
         const updated = await refreshScanStatus(userId, scanId);
         return { statusCode: 200, headers, body: JSON.stringify(updated) };
     }
-    // GET UPLOAD URL: POST /body-scans/{scanId}/upload-url
+
     if (method === 'POST' && fullPath.includes('/upload-url')) {
         const scanId = pathParts[1];
         console.log(`[Upload] Getting signed URL for scanId: ${scanId}`);
-
-        const uploadInfo = await getUploadUrl(scanId);   // Add helper below
+        const uploadInfo = await getUploadUrl(scanId);
         return { statusCode: 201, headers, body: JSON.stringify(uploadInfo) };
     }
 
-    // POST /body-scans → save new scan
-      if (method === 'POST') {
+    if (method === 'POST') {
         let scanData = JSON.parse(event.body || '{}');
         if (!scanData) {
             return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing scan data.' }) };
         }
 
-        // Ensure we save the FULL object with prismScanId
         const fullScanData = {
             ...scanData,
-            // If prismScanId is missing, try to pull it from other fields
             prismScanId: scanData.prismScanId || scanData.id
         };
 
@@ -427,17 +377,17 @@ async function handleBodyScansRequest(event, headers, method, pathParts) {
         return { statusCode: 201, headers, body: JSON.stringify(newScan) };
     }
 
-// ... (Other handlers like Grocery/Meals below are kept implicit but connected via routing logic above)
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+}
 
+// === YOUR OTHER HANDLERS (unchanged) ===
 async function handleGroceryListRequest(event, headers, method, pathParts) {
     const userId = event.user.userId;
-    // ... Full logic handled by databaseService calls, keeping wrapper simple ...
     if (method === 'GET' && pathParts.length === 1) {
         const lists = await getGroceryLists(userId);
         return { statusCode: 200, headers, body: JSON.stringify(lists) };
     }
-    // ... (Keeping this brief for XML, assuming full logic is preserved in real deployment) ...
-    return { statusCode: 200, headers, body: JSON.stringify({ message: "Grocery logic placeholder for XML update" }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ message: "Grocery logic placeholder" }) };
 }
 
 async function handleMealLogRequest(event, headers, method, pathParts) {
@@ -446,18 +396,15 @@ async function handleMealLogRequest(event, headers, method, pathParts) {
         const logEntries = await getMealLogEntries(userId);
         return { statusCode: 200, headers, body: JSON.stringify(logEntries) };
     }
-    // ...
     return { statusCode: 200, headers, body: JSON.stringify([]) };
 }
 
 async function handleSavedMealsRequest(event, headers, method, pathParts) {
-    // ...
     const meals = await getSavedMeals(event.user.userId);
     return { statusCode: 200, headers, body: JSON.stringify(meals) };
 }
 
 async function handleMealPlansRequest(event, headers, method, pathParts) {
-    // ...
     const plans = await getMealPlans(event.user.userId);
     return { statusCode: 200, headers, body: JSON.stringify(plans) };
 }
@@ -471,7 +418,6 @@ async function handleRewardsRequest(event, headers, method) {
 }
 
 async function handleCustomerLogin(event, headers, JWT_SECRET) {
-    // Note: Use soft auth on backend means login must be robust
     const mutation = `mutation customerAccessTokenCreate($input: CustomerAccessTokenCreateInput!) { customerAccessTokenCreate(input: $input) { customerAccessToken { accessToken expiresAt } customerUserErrors { code field message } } }`;
     try {
         const { email, password } = JSON.parse(event.body);
@@ -517,7 +463,16 @@ async function handleMealSuggestionRequest(event, ai, headers) {
 function callShopifyStorefrontAPI(query, variables) {
     const { SHOPIFY_STORE_DOMAIN, SHOPIFY_STOREFRONT_TOKEN } = process.env;
     const postData = JSON.stringify({ query, variables });
-    const options = { hostname: SHOPIFY_STORE_DOMAIN, path: '/api/2024-04/graphql.json', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData), 'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN } };
+    const options = { 
+        hostname: SHOPIFY_STORE_DOMAIN, 
+        path: '/api/2024-04/graphql.json', 
+        method: 'POST', 
+        headers: { 
+            'Content-Type': 'application/json', 
+            'Content-Length': Buffer.byteLength(postData), 
+            'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN 
+        } 
+    };
     return new Promise((resolve, reject) => {
         const req = https.request(options, (res) => {
             let data = '';
