@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { initScanSession } from '../services/api';
-import { Camera } from 'lucide-react';
 
 interface ScannerProps {
   onClose: () => void;
@@ -16,7 +15,8 @@ declare global {
 export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   const [debugLog, setDebugLog] = useState<string[]>(["Scanner mounted"]);
   const [error, setError] = useState<string | null>(null);
-  const [sessionData, setSessionData] = useState<any>(null);
+  const [prismReady, setPrismReady] = useState(false);
+  const [prismInstance, setPrismInstance] = useState<any>(null);
 
   const addLog = (msg: string) => {
     console.log(msg);
@@ -24,16 +24,18 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   };
 
   useEffect(() => {
+    addLog("1. Scanner mounted - fetching session");
+
     const load = async () => {
       try {
-        const data = await initScanSession();
-        setSessionData(data);
+        await initScanSession();
         addLog("2. Session received from backend ✅");
 
         const handlePrismLoaded = (event: CustomEvent) => {
           addLog("3. Prism SDK loaded - ready");
           if (event.detail?.prism) {
-            // Do NOT call render here - let the button do it
+            setPrismInstance(event.detail.prism);
+            setPrismReady(true);
           }
         };
 
@@ -57,9 +59,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   }, []);
 
   const startPrismScan = () => {
-    addLog("Start Scan clicked - triggering Prism");
-    if (window.prism) {
-      window.prism.render({
+    addLog("Start Scan clicked");
+    if (prismInstance) {
+      addLog("Triggering Prism render...");
+      prismInstance.render({
         onSuccess: (result: any) => {
           addLog("✅ PRISM ONSUCCESS FIRED");
           addLog("Keys: " + Object.keys(result || {}).join(", "));
@@ -80,7 +83,6 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
   return (
     <div className="fixed inset-0 z-[100] bg-black overflow-hidden">
 
-      {/* Prism container */}
       <div id="prism-container" style={{ width: '100%', height: '100%' }} />
 
       {/* Debug Panel */}
@@ -91,13 +93,14 @@ export const Scanner: React.FC<ScannerProps> = ({ onClose, onComplete }) => {
         ))}
       </div>
 
-      {/* Start Button - Prism style */}
+      {/* Start Button */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[150]">
         <button 
-          className="prism-button px-10 py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg"
+          className="px-10 py-5 rounded-2xl font-bold text-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg disabled:opacity-50"
           onClick={startPrismScan}
+          disabled={!prismReady}
         >
-          Start Scan
+          {prismReady ? "Start Scan" : "Loading Prism..."}
         </button>
       </div>
 
